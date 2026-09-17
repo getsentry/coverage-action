@@ -75,7 +75,7 @@ The repository must:
 2. Have the codecov-action configured and running
 3. Have workflow runs with unexpired codecov artifacts
 
-Use **Setup Token** in the header to add a Personal Access Token. Artifact downloads require authentication even for public repositories. Fine-grained tokens need **Actions: read** access to the repository.
+Use **Setup Token** in the header to add a Personal Access Token. Artifact downloads require authentication even for public repositories. Fine-grained tokens need **Actions: read** access to the repository and **Contents: read** to list branches in private repositories.
 
 ## How It Works
 
@@ -118,7 +118,7 @@ website/
 
 ## API Rate Limits
 
-GitHub limits unauthenticated requests to 60 per hour per IP. Each page can require one request per workflow run plus artifact downloads; a token provides a higher limit. Rate-limit and download failures are shown as errors instead of an empty result.
+GitHub limits unauthenticated requests to 60 per hour per IP. Each page can require one request per workflow run plus artifact downloads; a token provides a higher limit. Rate-limit and download failures are shown as errors instead of an empty result. Reports that load successfully remain visible, and you can retry failed loads or continue to older runs.
 
 If no reports are found, check the action logs for missing report files and failed uploads. A successful workflow can still contain no coverage artifacts if its configured report path is wrong. GitHub's workflow search and artifact-retention limits also apply.
 

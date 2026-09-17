@@ -217,5 +217,91 @@ describe("dashboard regression coverage", () => {
     expect(await screen.findByText("Error Loading Data")).toBeTruthy();
     expect(screen.getByText("Artifact service unavailable")).toBeTruthy();
     expect(screen.queryByText("No Data Available")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Load older runs" }),
+    ).toBeTruthy();
+    requests.mockImplementation(githubResponse);
+    fireEvent.click(screen.getByRole("button", { name: "Retry failed loads" }));
+    expect(await screen.findByText("No Data Available")).toBeTruthy();
+    expect(screen.queryByText("Error Loading Data")).toBeNull();
+  });
+
+  it("keeps valid reports and older pages when another run fails", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    requests.mockImplementation((input) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/runs/1/artifacts")) {
+        return Promise.resolve(
+          json({ message: "Artifact service unavailable" }, 503),
+        );
+      }
+      if (url.pathname.endsWith("/runs/2/artifacts")) {
+        return Promise.resolve(
+          json({
+            artifacts: [
+              {
+                id: 100,
+                name: "codecov-coverage-results-main-unit",
+                expired: false,
+              },
+            ],
+          }),
+        );
+      }
+      return githubResponse(input);
+    });
+    openDashboard();
+    expect(await screen.findAllByText("81.8%")).toHaveLength(2);
+    expect(screen.getByText("Some Reports Could Not Be Loaded")).toBeTruthy();
+    expect(screen.getByText(/Artifact service unavailable/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Load older runs" }));
+    expect(
+      await within(screen.getByRole("table")).findByText("51"),
+    ).toBeTruthy();
+    expect(within(screen.getByRole("table")).getByText("2")).toBeTruthy();
+  });
+
+  it("keeps coverage when the test report in the same run is malformed", async () => {
+    requests.mockImplementation((input) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/runs")) {
+        return Promise.resolve(
+          json({ workflow_runs: [coverageRun], total_count: 1 }),
+        );
+      }
+      if (url.pathname.endsWith("/runs/51/artifacts")) {
+        return Promise.resolve(
+          json({
+            artifacts: [
+              {
+                id: 100,
+                name: "codecov-coverage-results-main-unit",
+                expired: false,
+              },
+              {
+                id: 101,
+                name: "codecov-test-results-main-unit",
+                expired: false,
+              },
+            ],
+          }),
+        );
+      }
+      if (url.pathname.endsWith("/artifacts/101/zip")) {
+        const zip = new AdmZip();
+        zip.addFile("test-results.json", Buffer.from("{"));
+        return Promise.resolve(
+          new Response(Uint8Array.from(zip.toBuffer()).buffer, {
+            headers: { "content-type": "application/zip" },
+          }),
+        );
+      }
+      return githubResponse(input);
+    });
+    openDashboard();
+    expect(await screen.findAllByText("81.8%")).toHaveLength(2);
+    expect(screen.getByText("Some Reports Could Not Be Loaded")).toBeTruthy();
+    expect(screen.getByText(/Invalid test-results.json report/)).toBeTruthy();
+    expect(screen.queryByText("No Data Available")).toBeNull();
   });
 });

@@ -69,9 +69,10 @@ describe("dashboard artifact loading", () => {
     vi.spyOn(githubService, "downloadArtifact").mockRejectedValue(
       Object.assign(new Error("Requires authentication"), { status: 401 }),
     );
-    await expect(fetchArtifacts("getsentry", "cli", "main", 7)).rejects.toThrow(
-      "Personal Access Token",
-    );
+    const result = await fetchArtifacts("getsentry", "cli", "main", 7);
+    expect(result.errors).toEqual([
+      expect.stringContaining("Personal Access Token"),
+    ]);
   });
 
   it("ignores expired artifacts and runs outside the selected date range", async () => {
@@ -113,9 +114,8 @@ describe("dashboard artifact loading", () => {
     vi.spyOn(githubService, "getRunArtifacts").mockRejectedValue(
       new Error("API rate limit exceeded"),
     );
-    await expect(fetchArtifacts("getsentry", "cli", "main", 7)).rejects.toThrow(
-      "rate limit",
-    );
+    const result = await fetchArtifacts("getsentry", "cli", "main", 7);
+    expect(result.errors).toEqual(["API rate limit exceeded"]);
   });
 
   it("does not hide network failures while downloading known artifacts", async () => {
@@ -128,8 +128,7 @@ describe("dashboard artifact loading", () => {
     vi.spyOn(githubService, "downloadArtifact").mockRejectedValue(
       new TypeError("Failed to fetch"),
     );
-    await expect(fetchArtifacts("getsentry", "cli", "main", 7)).rejects.toThrow(
-      "Failed to fetch",
-    );
+    const result = await fetchArtifacts("getsentry", "cli", "main", 7);
+    expect(result.errors).toEqual(["Failed to fetch"]);
   });
 });

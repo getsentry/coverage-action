@@ -100,6 +100,7 @@ export default function DashboardPage() {
     loading: dataLoading,
     fetching: dataFetching,
     error: dataError,
+    retry,
     hasMore,
     loadMore,
     runsChecked,
@@ -190,8 +191,24 @@ export default function DashboardPage() {
       {dataError && (
         <Alert variant="destructive" className="mb-6">
           <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Error Loading Data</AlertTitle>
-          <AlertDescription>{dataError}</AlertDescription>
+          <AlertTitle>
+            {data.length > 0
+              ? "Some Reports Could Not Be Loaded"
+              : "Error Loading Data"}
+          </AlertTitle>
+          <AlertDescription>
+            {data.length > 0 && (
+              <span>Showing reports that loaded successfully.</span>
+            )}
+            <span>{dataError}</span>
+            <Button
+              variant="outline"
+              disabled={dataFetching}
+              onClick={() => void retry()}
+            >
+              Retry failed loads
+            </Button>
+          </AlertDescription>
         </Alert>
       )}
 

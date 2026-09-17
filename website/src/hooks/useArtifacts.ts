@@ -7,6 +7,7 @@ interface ArtifactPage {
   data: TimeSeriesDataPoint[];
   nextPage: number | undefined;
   runsChecked: number;
+  errors: string[];
 }
 
 /** Load bounded pages so older coverage remains reachable without exhausting the API. */
@@ -29,7 +30,10 @@ export function useArtifacts(
   });
 
   const points = new Map<string, TimeSeriesDataPoint>();
+  const errors = new Set<string>();
+  if (query.error) errors.add(query.error.message);
   for (const page of query.data?.pages ?? []) {
+    for (const error of page.errors) errors.add(error);
     for (const point of page.data) {
       // Pages are newest-first. Preserve the newest run for each commit.
       if (!points.has(point.commitSha)) points.set(point.commitSha, point);
@@ -42,7 +46,8 @@ export function useArtifacts(
     ),
     loading: query.isLoading,
     fetching: query.isFetching,
-    error: query.error?.message ?? null,
+    error: [...errors].join(" ") || null,
+    retry: query.refetch,
     hasMore: query.hasNextPage,
     loadMore: query.fetchNextPage,
     runsChecked:
@@ -78,6 +83,7 @@ export async function fetchArtifacts(
   // 3. For each run, fetch and parse artifacts
   const dataPoints: TimeSeriesDataPoint[] = [];
   const processedRunIds = new Set<number>();
+  const errors = new Set<string>();
 
   // Process runs in parallel batches of 5 for speed
   const BATCH_SIZE = 5;
@@ -88,14 +94,11 @@ export async function fetchArtifacts(
     );
 
     for (const result of results) {
-      if (result.status === "rejected") throw result.reason;
-      if (result.value.authError) {
-        throw new Error(
-          "Authentication required to download artifacts. " +
-            "GitHub requires a Personal Access Token with Actions read access, even for public repositories. " +
-            "Please set up or update your token using the button in the header.",
-        );
+      if (result.status === "rejected") {
+        errors.add(artifactErrorMessage(result.reason));
+        continue;
       }
+      for (const error of result.value.errors) errors.add(error);
       if (result.value.dataPoint) dataPoints.push(result.value.dataPoint);
     }
   }
@@ -116,12 +119,13 @@ export async function fetchArtifacts(
     ),
     nextPage: runs.length === WORKFLOW_RUNS_PAGE_SIZE ? page + 1 : undefined,
     runsChecked: runs.length,
+    errors: [...errors],
   };
 }
 
 interface ProcessRunResult {
   dataPoint?: TimeSeriesDataPoint;
-  authError?: boolean;
+  errors: string[];
 }
 
 async function processRun(
@@ -130,10 +134,10 @@ async function processRun(
   run: { id: number; created_at: string; head_sha: string; run_number: number },
   processedRunIds: Set<number>,
 ): Promise<ProcessRunResult> {
-  if (processedRunIds.has(run.id)) return {};
+  if (processedRunIds.has(run.id)) return { errors: [] };
   processedRunIds.add(run.id);
 
-  let authError = false;
+  const errors: string[] = [];
 
   const artifacts = await githubService.getRunArtifacts(owner, repo, run.id);
 
@@ -144,7 +148,7 @@ async function processRun(
     (a) => a.name.startsWith("codecov-coverage-results") && !a.expired,
   );
 
-  if (!testArtifact && !coverageArtifact) return {};
+  if (!testArtifact && !coverageArtifact) return { errors };
 
   const dataPoint: TimeSeriesDataPoint = {
     date: new Date(run.created_at),
@@ -178,22 +182,31 @@ async function processRun(
       totalTime: t.totalTime,
     };
   } else if (testResult.status === "rejected") {
-    if (isAuthError(testResult.reason)) authError = true;
-    else throw testResult.reason;
+    errors.push(artifactErrorMessage(testResult.reason));
   }
 
   if (coverageResult.status === "fulfilled" && coverageResult.value?.coverage) {
     dataPoint.coverage = coverageResult.value.coverage;
   } else if (coverageResult.status === "rejected") {
-    if (isAuthError(coverageResult.reason)) authError = true;
-    else throw coverageResult.reason;
+    errors.push(artifactErrorMessage(coverageResult.reason));
   }
 
   if (dataPoint.tests || dataPoint.coverage) {
-    return { dataPoint, authError };
+    return { dataPoint, errors };
   }
 
-  return { authError };
+  return { errors };
+}
+
+function artifactErrorMessage(error: unknown): string {
+  if (isAuthError(error)) {
+    return (
+      "Authentication required to download artifacts. " +
+      "GitHub requires a Personal Access Token with Actions read access, even for public repositories. " +
+      "Please set up or update your token using the button in the header."
+    );
+  }
+  return error instanceof Error ? error.message : "Failed to load an artifact.";
 }
 
 function isAuthError(err: unknown): boolean {
