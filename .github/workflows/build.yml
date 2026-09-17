@@ -78,6 +78,10 @@ jobs:
         working-directory: website
         run: pnpm run build
 
+      - name: Check GitHub Pages routes
+        working-directory: website
+        run: pnpm run test:build
+
       - name: Package for gh-pages
         run: cd website/dist && zip -r ../../gh-pages.zip .
 

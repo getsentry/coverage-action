@@ -1,6 +1,8 @@
 import { Octokit } from "@octokit/rest";
 import { tokenStorage } from "./tokenStorage";
 
+export const WORKFLOW_RUNS_PAGE_SIZE = 50;
+
 export interface RepoInfo {
   exists: true;
   defaultBranch: string;
@@ -52,14 +54,21 @@ class GitHubService {
   }
 
   // Fetch workflow runs for a specific branch
-  async getWorkflowRuns(owner: string, repo: string, branch: string, page = 1) {
+  async getWorkflowRuns(
+    owner: string,
+    repo: string,
+    branch: string,
+    page = 1,
+    since?: string,
+  ) {
     try {
       const { data } = await this.octokit.rest.actions.listWorkflowRunsForRepo({
         owner,
         repo,
         branch,
-        status: "success",
-        per_page: 50,
+        status: "completed",
+        created: since ? `>=${since}` : undefined,
+        per_page: WORKFLOW_RUNS_PAGE_SIZE,
         page,
       });
       return data.workflow_runs;
@@ -115,8 +124,16 @@ class GitHubService {
         exists: true,
         defaultBranch: data.default_branch,
       };
-    } catch {
-      return null;
+    } catch (error) {
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "status" in error &&
+        error.status === 404
+      ) {
+        return null;
+      }
+      throw error;
     }
   }
 }
