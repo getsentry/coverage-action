@@ -1,3 +1,4 @@
+import * as github from "@actions/github";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ReportFormatter } from "../formatters/report-formatter.js";
 import { GitHubClient } from "../utils/github-client.js";
@@ -120,6 +121,7 @@ describe("GitHubClient.getPrDiff", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    (github.context as { eventName: string }).eventName = "pull_request";
     client = new GitHubClient("token");
   });
 
@@ -166,6 +168,20 @@ describe("GitHubClient.getPrDiff", () => {
     const diff = await client.getPrDiff();
 
     expect(pullsGet).toHaveBeenCalled();
+    expect(diff).toBe("PR_DIFF");
+  });
+
+  it("uses the PR diff on pull_request_target, where context.sha is the base tip", async () => {
+    (github.context as { eventName: string }).eventName = "pull_request_target";
+    pullsGet.mockResolvedValue({ data: "PR_DIFF" });
+
+    const diff = await client.getPrDiff();
+
+    expect(getCommit).not.toHaveBeenCalled();
+    expect(compareCommitsWithBasehead).not.toHaveBeenCalled();
+    expect(pullsGet).toHaveBeenCalledWith(
+      expect.objectContaining({ pull_number: 1 }),
+    );
     expect(diff).toBe("PR_DIFF");
   });
 });

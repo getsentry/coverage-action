@@ -188,37 +188,45 @@ export class GitHubClient {
     const { owner, repo } = this.context.repo;
 
     // Patch coverage intersects this diff with a coverage report produced from
-    // the checked-out tree. actions/checkout defaults to GITHUB_REF, which on
-    // pull_request is the merge commit (refs/pull/N/merge), so the report is
-    // numbered against the merged tree. The pulls.get diff is numbered against
-    // the head commit instead, and the two disagree once the base branch has
-    // moved. Prefer a diff numbered against the merge commit by comparing it
-    // with its first parent (the base tip it was built on).
-    try {
-      const { data: mergeCommit } = await this.octokit.rest.repos.getCommit({
-        owner,
-        repo,
-        ref: this.context.sha,
-      });
+    // the checked-out tree. On a `pull_request` event actions/checkout defaults
+    // to GITHUB_REF (refs/pull/N/merge), so context.sha is this PR's merge
+    // commit and the report is numbered against the merged tree. The pulls.get
+    // diff is numbered against the head commit instead, and the two disagree
+    // once the base branch has moved. Prefer a diff numbered against the merge
+    // commit by comparing it with its first parent (the base tip it was built
+    // on).
+    //
+    // Only do this for `pull_request`. On `pull_request_target` context.sha is
+    // the base branch tip (itself often a two-parent merge commit) and checkout
+    // defaults to that base tree, so the merge-commit heuristic would diff an
+    // unrelated commit — fall through to the head-numbered pulls.get diff there.
+    if (this.context.eventName === "pull_request") {
+      try {
+        const { data: mergeCommit } = await this.octokit.rest.repos.getCommit({
+          owner,
+          repo,
+          ref: this.context.sha,
+        });
 
-      if (mergeCommit.parents.length === 2) {
-        const { data } =
-          await this.octokit.rest.repos.compareCommitsWithBasehead({
-            owner,
-            repo,
-            basehead: `${mergeCommit.parents[0].sha}...${this.context.sha}`,
-            mediaType: {
-              format: "diff",
-            },
-          });
-        return data as unknown as string;
+        if (mergeCommit.parents.length === 2) {
+          const { data } =
+            await this.octokit.rest.repos.compareCommitsWithBasehead({
+              owner,
+              repo,
+              basehead: `${mergeCommit.parents[0].sha}...${this.context.sha}`,
+              mediaType: {
+                format: "diff",
+              },
+            });
+          return data as unknown as string;
+        }
+      } catch (error) {
+        core.warning(
+          `Failed to diff against merge commit, falling back to PR diff: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
       }
-    } catch (error) {
-      core.warning(
-        `Failed to diff against merge commit, falling back to PR diff: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
     }
 
     const { data } = await this.octokit.rest.pulls.get({
