@@ -1,8 +1,9 @@
-import { useQuery } from "@tanstack/react-query";
+import { skipToken, useQuery } from "@tanstack/react-query";
 import { Activity, AlertCircle } from "lucide-react";
 import { useCallback, useMemo } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BranchSelector } from "../components/BranchSelector";
 import { CoverageChart } from "../components/CoverageChart";
@@ -26,7 +27,6 @@ function parseDays(value: string | null): number {
 
 export default function DashboardPage() {
   const { org, repo } = useParams<{ org: string; repo: string }>();
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Read state from URL search params
@@ -57,15 +57,14 @@ export default function DashboardPage() {
   );
 
   // Fetch repository info (existence + default branch)
-  const { data: repoInfo, isLoading: repoLoading } = useQuery<RepoInfo | null>({
+  const {
+    data: repoInfo,
+    isLoading: repoLoading,
+    error: repoError,
+  } = useQuery<RepoInfo | null>({
     queryKey: ["repoInfo", org, repo],
-    queryFn: async () => {
-      const info = await githubService.getRepoInfo(org!, repo!);
-      if (!info) {
-        setTimeout(() => navigate("/404", { replace: true }), 2000);
-      }
-      return info;
-    },
+    queryFn:
+      org && repo ? () => githubService.getRepoInfo(org, repo) : skipToken,
     enabled: !!org && !!repo,
   });
 
@@ -80,6 +79,7 @@ export default function DashboardPage() {
   //  2. Repo's default branch from the API
   //  3. First branch in the list as last resort
   const effectiveBranch = useMemo(() => {
+    if (!repoInfo) return null;
     if (branchParam && branches.length > 0) {
       if (branches.some((b) => b.name === branchParam)) {
         return branchParam;
@@ -100,6 +100,9 @@ export default function DashboardPage() {
     loading: dataLoading,
     fetching: dataFetching,
     error: dataError,
+    hasMore,
+    loadMore,
+    runsChecked,
   } = useArtifacts(org, repo, effectiveBranch, days);
 
   // Calculate stats from latest data point
@@ -115,7 +118,7 @@ export default function DashboardPage() {
     return diff > 0 ? `+${diff.toFixed(1)}` : diff.toFixed(1);
   };
 
-  // Show repo-not-found before redirect
+  // Keep the repository URL available for retrying with a different token.
   if (repoInfo === null && !repoLoading) {
     return (
       <div className="mx-auto max-w-7xl px-6 py-8">
@@ -139,13 +142,15 @@ export default function DashboardPage() {
     );
   }
 
-  if (branchesError) {
+  if (repoError || branchesError) {
     return (
       <div className="mx-auto max-w-7xl px-6 py-8">
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>Error Loading Repository</AlertTitle>
-          <AlertDescription>{branchesError}</AlertDescription>
+          <AlertDescription>
+            {repoError?.message ?? branchesError}
+          </AlertDescription>
         </Alert>
       </div>
     );
@@ -199,22 +204,42 @@ export default function DashboardPage() {
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>No Data Available</AlertTitle>
           <AlertDescription>
-            No workflow runs with codecov artifacts found for branch "
-            {effectiveBranch}" in the selected time range.
+            No coverage or test artifacts found in the {runsChecked} workflow
+            runs checked for branch "{effectiveBranch}" in the selected time
+            range.
+            {hasMore && (
+              <span className="block mt-2">
+                Older runs are available. Load more runs below to continue
+                searching.
+              </span>
+            )}
             {!githubService.hasToken() && (
               <span className="block mt-2">
                 Downloading artifacts requires authentication. Try adding a
                 GitHub token using the button in the header.
               </span>
             )}
-            {githubService.hasToken() && (
-              <span className="block mt-2">
-                Make sure the codecov action is set up and has run successfully
-                on this branch.
-              </span>
-            )}
+            <span className="block mt-2">
+              Check the coverage-action logs for missing report files or failed
+              artifact uploads.
+            </span>
           </AlertDescription>
         </Alert>
+      )}
+
+      {hasMore && (
+        <div className="mb-6 flex items-center gap-3">
+          <Button
+            variant="outline"
+            disabled={dataFetching}
+            onClick={() => void loadMore()}
+          >
+            {dataFetching ? "Loading runs..." : "Load older runs"}
+          </Button>
+          <span className="text-sm text-muted-foreground">
+            {runsChecked} workflow runs checked
+          </span>
+        </div>
       )}
 
       {/* Stats Overview */}

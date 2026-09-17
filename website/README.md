@@ -7,7 +7,7 @@ A React-based web dashboard for visualizing test results and code coverage metri
 - 📊 **Coverage Trends** - Line and branch coverage over time
 - ✅ **Test Results** - Pass rates, failures, and test counts
 - 🌿 **Branch Comparison** - View metrics for different branches
-- ⏰ **Time Filters** - Filter data by time range (7, 30, 90 days, all time)
+- ⏰ **Time Filters** - Filter data by time range (7, 30, 90, or 365 days)
 - 📈 **Interactive Charts** - Built with Recharts for beautiful visualizations
 - 🎨 **Modern UI** - Styled with Tailwind CSS and shadcn/ui components
 
@@ -54,6 +54,12 @@ pnpm preview
 
 ## Usage
 
+### Regression tests
+
+Run `pnpm test` from the repository root for the action, API/parser, and rendered dashboard tests. Dashboard tests use controlled GitHub responses and real ZIP reports; they need no network access or token.
+
+After building the website, run `pnpm --dir website test:build` from the repository root to verify the GitHub Pages fallback and asset paths. Both checks run in CI.
+
 ### View Repository Coverage
 
 Navigate to `/:owner/:repo` to view a repository's dashboard:
@@ -65,17 +71,19 @@ http://localhost:5173/mathuraditya724/codecov-action
 ### Requirements
 
 The repository must:
-1. Be public (or you'll need to add GitHub OAuth)
+1. Be accessible to your GitHub token
 2. Have the codecov-action configured and running
-3. Have workflow runs with codecov artifacts
+3. Have workflow runs with unexpired codecov artifacts
+
+Use **Setup Token** in the header to add a Personal Access Token. Artifact downloads require authentication even for public repositories. Fine-grained tokens need **Actions: read** access to the repository.
 
 ## How It Works
 
 1. **Fetch Branches** - Gets all branches from the repository
-2. **Fetch Workflow Runs** - Gets successful workflow runs for selected branch
+2. **Fetch Workflow Runs** - Gets completed workflow runs (including failures) for the selected branch and date range, 50 at a time
 3. **Download Artifacts** - Downloads `codecov-test-results-*` and `codecov-coverage-results-*` artifacts
 4. **Parse Data** - Extracts test and coverage metrics from artifacts
-5. **Visualize** - Displays trends, charts, and tables
+5. **Visualize** - Displays trends, charts, and tables. Use **Load older runs** to search the next page; an empty first page does not mean older reports are absent.
 
 ## Project Structure
 
@@ -110,15 +118,15 @@ website/
 
 ## API Rate Limits
 
-The dashboard uses GitHub's public API without authentication:
-- **Rate Limit**: 60 requests per hour per IP
-- **Solution**: The dashboard limits artifact fetching to the 20 most recent runs
+GitHub limits unauthenticated requests to 60 per hour per IP. Each page can require one request per workflow run plus artifact downloads; a token provides a higher limit. Rate-limit and download failures are shown as errors instead of an empty result.
 
-To increase limits, implement GitHub OAuth (5000 requests/hour).
+If no reports are found, check the action logs for missing report files and failed uploads. A successful workflow can still contain no coverage artifacts if its configured report path is wrong. GitHub's workflow search and artifact-retention limits also apply.
 
 ## Deployment
 
 ### GitHub Pages
+
+The build emits `404.html` alongside `index.html`, allowing GitHub Pages to render repository routes when opened directly or refreshed. Deploy both files.
 
 1. Add deployment workflow (`.github/workflows/deploy-dashboard.yml`):
 
@@ -163,4 +171,3 @@ jobs:
 ## License
 
 MIT
-
