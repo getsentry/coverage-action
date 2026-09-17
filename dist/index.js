@@ -57474,7 +57474,10 @@ class GitHubClient {
      */
     async createCommitStatus(context, state, description, targetUrl) {
         const { owner, repo } = this.context.repo;
-        const sha = this.context.sha;
+        // On pull_request events context.sha is the merge commit (refs/pull/N/merge),
+        // which the PR never points to. Branch protection and PR status rollups read
+        // the head commit, so report there when the event provides one.
+        const sha = this.context.payload.pull_request?.head?.sha ?? this.context.sha;
         await this.octokit.rest.repos.createCommitStatus({
             owner,
             repo,
@@ -57494,6 +57497,34 @@ class GitHubClient {
             throw new Error("Cannot get PR diff: Not a pull request");
         }
         const { owner, repo } = this.context.repo;
+        // Patch coverage intersects this diff with a coverage report produced from
+        // the checked-out tree. actions/checkout defaults to GITHUB_REF, which on
+        // pull_request is the merge commit (refs/pull/N/merge), so the report is
+        // numbered against the merged tree. The pulls.get diff is numbered against
+        // the head commit instead, and the two disagree once the base branch has
+        // moved. Prefer a diff numbered against the merge commit by comparing it
+        // with its first parent (the base tip it was built on).
+        try {
+            const { data: mergeCommit } = await this.octokit.rest.repos.getCommit({
+                owner,
+                repo,
+                ref: this.context.sha,
+            });
+            if (mergeCommit.parents.length === 2) {
+                const { data } = await this.octokit.rest.repos.compareCommitsWithBasehead({
+                    owner,
+                    repo,
+                    basehead: `${mergeCommit.parents[0].sha}...${this.context.sha}`,
+                    mediaType: {
+                        format: "diff",
+                    },
+                });
+                return data;
+            }
+        }
+        catch (error) {
+            warning(`Failed to diff against merge commit, falling back to PR diff: ${error instanceof Error ? error.message : String(error)}`);
+        }
         const { data } = await this.octokit.rest.pulls.get({
             owner,
             repo,
