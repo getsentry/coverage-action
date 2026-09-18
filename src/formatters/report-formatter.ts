@@ -163,9 +163,11 @@ export class ReportFormatter {
           0,
         ) ?? 0;
       const patchDetails =
-        totalLines > 0
-          ? ` (${coveredLines} of ${totalLines} changed executable lines covered; target ${patchTarget}%).`
-          : ` (no changed executable lines found; target ${patchTarget}%).`;
+        patchBreakdown === undefined
+          ? ` (changed-line details unavailable; target ${patchTarget}%).`
+          : totalLines > 0
+            ? ` (${coveredLines} of ${totalLines} changed executable lines covered; target ${patchTarget}%).`
+            : ` (no changed executable lines found; target ${patchTarget}%).`;
       lines.push(
         `${patchEmoji} Patch coverage is **${patchRate}%**${patchDetails}`,
       );

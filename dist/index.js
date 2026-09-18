@@ -36449,9 +36449,11 @@ class ReportFormatter {
             const patchEmoji = results.patchCoverageRate >= patchTarget ? ":white_check_mark:" : ":x:";
             const coveredLines = patchBreakdown?.reduce((total, file) => total + file.coveredLines.length, 0) ?? 0;
             const totalLines = patchBreakdown?.reduce((total, file) => total + file.coveredLines.length + file.missedLines.length, 0) ?? 0;
-            const patchDetails = totalLines > 0
-                ? ` (${coveredLines} of ${totalLines} changed executable lines covered; target ${patchTarget}%).`
-                : ` (no changed executable lines found; target ${patchTarget}%).`;
+            const patchDetails = patchBreakdown === undefined
+                ? ` (changed-line details unavailable; target ${patchTarget}%).`
+                : totalLines > 0
+                    ? ` (${coveredLines} of ${totalLines} changed executable lines covered; target ${patchTarget}%).`
+                    : ` (no changed executable lines found; target ${patchTarget}%).`;
             lines.push(`${patchEmoji} Patch coverage is **${patchRate}%**${patchDetails}`);
         }
         else {

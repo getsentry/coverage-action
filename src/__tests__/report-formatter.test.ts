@@ -303,7 +303,7 @@ describe("ReportFormatter", () => {
 
       // Should show checkmark because patch coverage is >= configured target (70%)
       expect(comment).toContain(
-        ":white_check_mark: Patch coverage is **77.56%** (no changed executable lines found; target 70%).",
+        ":white_check_mark: Patch coverage is **77.56%** (changed-line details unavailable; target 70%).",
       );
       expect(comment).not.toContain("Project has **1348** uncovered lines.");
     });
@@ -413,12 +413,12 @@ describe("ReportFormatter", () => {
 
       // Should show X because patch coverage is below configured target (80%)
       expect(comment).toContain(
-        ":x: Patch coverage is **77.56%** (no changed executable lines found; target 80%).",
+        ":x: Patch coverage is **77.56%** (changed-line details unavailable; target 80%).",
       );
       expect(comment).not.toContain("Project has **500** uncovered lines.");
     });
 
-    it("should show checkmark with no project misses message when totalMisses is 0", () => {
+    it("should report an empty patch breakdown when no changed executable lines were found", () => {
       const coverageResults: AggregatedCoverageResults = {
         totalStatements: 100,
         coveredStatements: 100,
@@ -433,7 +433,9 @@ describe("ReportFormatter", () => {
         totalMisses: 0,
       };
 
-      const comment = formatter.formatReport(undefined, coverageResults);
+      const comment = formatter.formatReport(undefined, coverageResults, {
+        patchFileBreakdown: [],
+      });
 
       // Should show checkmark
       expect(comment).toContain(
