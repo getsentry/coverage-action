@@ -3,6 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ReportFormatter } from "../formatters/report-formatter.js";
 import { GitHubClient } from "../utils/github-client.js";
 
+const execSync = vi.fn();
+
+vi.mock("node:child_process", () => ({
+  execSync: (...args: unknown[]) => execSync(...args),
+}));
+
 const listComments = vi.fn();
 const updateComment = vi.fn();
 const createComment = vi.fn();
@@ -122,6 +128,8 @@ describe("GitHubClient.getPrDiff", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     (github.context as { eventName: string }).eventName = "pull_request";
+    // Default: the merge commit is the checked-out HEAD (actions/checkout default).
+    execSync.mockReturnValue("mergecommitsha\n");
     client = new GitHubClient("token");
   });
 
@@ -173,6 +181,38 @@ describe("GitHubClient.getPrDiff", () => {
 
   it("uses the PR diff on pull_request_target, where context.sha is the base tip", async () => {
     (github.context as { eventName: string }).eventName = "pull_request_target";
+    pullsGet.mockResolvedValue({ data: "PR_DIFF" });
+
+    const diff = await client.getPrDiff();
+
+    expect(getCommit).not.toHaveBeenCalled();
+    expect(compareCommitsWithBasehead).not.toHaveBeenCalled();
+    expect(pullsGet).toHaveBeenCalledWith(
+      expect.objectContaining({ pull_number: 1 }),
+    );
+    expect(diff).toBe("PR_DIFF");
+  });
+
+  it("uses the PR diff when the head commit is checked out instead of the merge commit", async () => {
+    // Workflow overrode checkout to use pull_request.head.sha, so local HEAD is
+    // the head commit and the report is numbered against head, not the merge tree.
+    execSync.mockReturnValue("abcdef0123456789\n");
+    pullsGet.mockResolvedValue({ data: "PR_DIFF" });
+
+    const diff = await client.getPrDiff();
+
+    expect(getCommit).not.toHaveBeenCalled();
+    expect(compareCommitsWithBasehead).not.toHaveBeenCalled();
+    expect(pullsGet).toHaveBeenCalledWith(
+      expect.objectContaining({ pull_number: 1 }),
+    );
+    expect(diff).toBe("PR_DIFF");
+  });
+
+  it("uses the PR diff when the checked-out commit cannot be determined", async () => {
+    execSync.mockImplementation(() => {
+      throw new Error("not a git repo");
+    });
     pullsGet.mockResolvedValue({ data: "PR_DIFF" });
 
     const diff = await client.getPrDiff();

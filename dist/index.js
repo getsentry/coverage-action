@@ -45,6 +45,7 @@ import require$$0__default, { Readable } from 'stream';
 import { createHash, createHmac } from 'node:crypto';
 import * as fs$2 from 'node:fs/promises';
 import fs__default$2 from 'node:fs/promises';
+import { execSync } from 'node:child_process';
 import * as os$1 from 'node:os';
 import os__default$1, { EOL as EOL$2 } from 'node:os';
 import require$$0$d, { Buffer as Buffer$1 } from 'buffer';
@@ -57489,6 +57490,28 @@ class GitHubClient {
         });
     }
     /**
+     * Whether the merge commit (context.sha) is the commit currently checked out.
+     *
+     * The coverage report is measured on the working tree, so patch coverage is
+     * only correct when the diff is numbered against the checked-out commit. When
+     * a workflow overrides actions/checkout to use the PR head instead of the
+     * default merge ref, local HEAD is the head commit, not context.sha, and the
+     * merge-commit diff would misattribute lines. Returns true only when we can
+     * confirm the merge commit is checked out; on any uncertainty returns false
+     * so getPrDiff falls back to the head-numbered pulls.get diff.
+     */
+    isMergeCheckedOut() {
+        try {
+            const headSha = execSync("git rev-parse HEAD", {
+                encoding: "utf8",
+            }).trim();
+            return headSha === this.context.sha;
+        }
+        catch {
+            return false;
+        }
+    }
+    /**
      * Get the PR diff content
      */
     async getPrDiff() {
@@ -57498,19 +57521,20 @@ class GitHubClient {
         }
         const { owner, repo } = this.context.repo;
         // Patch coverage intersects this diff with a coverage report produced from
-        // the checked-out tree. On a `pull_request` event actions/checkout defaults
-        // to GITHUB_REF (refs/pull/N/merge), so context.sha is this PR's merge
-        // commit and the report is numbered against the merged tree. The pulls.get
-        // diff is numbered against the head commit instead, and the two disagree
-        // once the base branch has moved. Prefer a diff numbered against the merge
-        // commit by comparing it with its first parent (the base tip it was built
-        // on).
+        // the checked-out tree, so the diff must be numbered against whatever commit
+        // was actually checked out. On a `pull_request` event actions/checkout
+        // defaults to GITHUB_REF (refs/pull/N/merge), so the report is numbered
+        // against the merge tree, while the pulls.get diff is numbered against the
+        // head commit — the two disagree once the base branch has moved. But some
+        // workflows explicitly check out `github.event.pull_request.head.sha`; there
+        // the report is numbered against head and the pulls.get diff is already
+        // correct.
         //
-        // Only do this for `pull_request`. On `pull_request_target` context.sha is
-        // the base branch tip (itself often a two-parent merge commit) and checkout
-        // defaults to that base tree, so the merge-commit heuristic would diff an
-        // unrelated commit — fall through to the head-numbered pulls.get diff there.
-        if (this.context.eventName === "pull_request") {
+        // Detect which commit is checked out (via the local git HEAD) and only use
+        // the merge-commit diff when the merge commit is what the report was built
+        // on. On `pull_request_target` context.sha is the base tip and checkout
+        // defaults to that base tree, so we never take the merge-diff path there.
+        if (this.context.eventName === "pull_request" && this.isMergeCheckedOut()) {
             try {
                 const { data: mergeCommit } = await this.octokit.rest.repos.getCommit({
                     owner,
