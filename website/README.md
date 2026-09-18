@@ -1,6 +1,6 @@
-# Codecov Dashboard
+# Coverage Dashboard
 
-A React-based web dashboard for visualizing test results and code coverage metrics from GitHub repositories using the codecov-action.
+A React-based web dashboard for visualizing test results and code coverage metrics from GitHub repositories using [Coverage Action](https://github.com/getsentry/coverage-action).
 
 ## Features
 
@@ -65,15 +65,15 @@ After building the website, run `pnpm --dir website test:build` from the reposit
 Navigate to `/:owner/:repo` to view a repository's dashboard:
 
 ```
-http://localhost:5173/mathuraditya724/codecov-action
+http://localhost:5173/getsentry/coverage-action
 ```
 
 ### Requirements
 
 The repository must:
 1. Be accessible to your GitHub token
-2. Have the codecov-action configured and running
-3. Have workflow runs with unexpired codecov artifacts
+2. Have Coverage Action configured and running
+3. Have workflow runs with unexpired coverage and test result artifacts
 
 Use **Setup Token** in the header to add a Personal Access Token. Artifact downloads require authentication even for public repositories. Fine-grained tokens need **Actions: read** access to the repository and **Contents: read** to list branches in private repositories.
 
@@ -150,7 +150,7 @@ jobs:
 ```
 
 2. Enable GitHub Pages in repository settings
-3. Access at `https://[username].github.io/codecov-action/`
+3. Access the dashboard at your configured GitHub Pages URL, such as [codecov.sentry.dev](https://codecov.sentry.dev/).
 
 ### Other Platforms
 

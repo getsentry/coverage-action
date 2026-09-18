@@ -1,4 +1,4 @@
-# Codecov Action
+# Coverage Action
 
 ![build](https://github.com/getsentry/coverage-action/actions/workflows/build.yml/badge.svg)
 
@@ -23,7 +23,7 @@ jobs:
       - name: Run tests with coverage
         run: npm test -- --coverage
       
-      - name: Codecov Action
+      - name: Coverage Action
         uses: getsentry/coverage-action@0.3.8
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -127,7 +127,7 @@ When thresholds are not configured, status checks report coverage metrics withou
 ### Basic Usage (Auto-detect)
 
 ```yaml
-- name: Codecov Action
+- name: Coverage Action
   uses: getsentry/coverage-action@0.3.8
   with:
     token: ${{ secrets.GITHUB_TOKEN }}
@@ -136,7 +136,7 @@ When thresholds are not configured, status checks report coverage metrics withou
 ### Explicit Files (Codecov-style)
 
 ```yaml
-- name: Codecov Action
+- name: Coverage Action
   uses: getsentry/coverage-action@0.3.8
   with:
     token: ${{ secrets.GITHUB_TOKEN }}
@@ -153,7 +153,7 @@ When thresholds are not configured, status checks report coverage metrics withou
 - name: Run tests
   run: pytest --cov=src --cov-report=xml
 
-- name: Codecov Action
+- name: Coverage Action
   uses: getsentry/coverage-action@0.3.8
   with:
     token: ${{ secrets.GITHUB_TOKEN }}
@@ -168,7 +168,7 @@ When thresholds are not configured, status checks report coverage metrics withou
 - name: Build and test
   run: ./gradlew test jacocoTestReport
 
-- name: Codecov Action
+- name: Coverage Action
   uses: getsentry/coverage-action@0.3.8
   with:
     token: ${{ secrets.GITHUB_TOKEN }}
@@ -182,7 +182,7 @@ When thresholds are not configured, status checks report coverage metrics withou
 - name: Run tests
   run: go test -coverprofile=coverage.out ./...
 
-- name: Codecov Action
+- name: Coverage Action
   uses: getsentry/coverage-action@0.3.8
   with:
     token: ${{ secrets.GITHUB_TOKEN }}
@@ -199,7 +199,7 @@ When thresholds are not configured, status checks report coverage metrics withou
 - name: Run tests with coverage
   run: cargo llvm-cov --codecov --output-path codecov.json
 
-- name: Codecov Action
+- name: Coverage Action
   uses: getsentry/coverage-action@0.3.8
   with:
     token: ${{ secrets.GITHUB_TOKEN }}
@@ -213,7 +213,7 @@ When thresholds are not configured, status checks report coverage metrics withou
 - name: Run tests
   run: npm test -- --coverage --coverageReporters=lcov
 
-- name: Codecov Action
+- name: Coverage Action
   uses: getsentry/coverage-action@0.3.8
   with:
     token: ${{ secrets.GITHUB_TOKEN }}
@@ -262,7 +262,7 @@ jobs:
       - name: Run tests
         run: pytest --cov=src --cov-report=xml
 
-      - name: Codecov Action
+      - name: Coverage Action
         uses: getsentry/coverage-action@0.3.8
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -275,7 +275,7 @@ jobs:
 Use built-in threshold enforcement with GitHub status checks:
 
 ```yaml
-- name: Codecov Action
+- name: Coverage Action
   uses: getsentry/coverage-action@0.3.8
   with:
     token: ${{ secrets.GITHUB_TOKEN }}

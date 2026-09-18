@@ -87,7 +87,7 @@ export function TokenSetup({ open, onOpenChange, onTokenSaved }: TokenSetupProps
             <ol className="list-decimal list-inside space-y-1 ml-2">
               <li>Go to GitHub Settings → Developer settings → Personal access tokens → Tokens (classic)</li>
               <li>Click "Generate new token (classic)"</li>
-              <li>Give it a name (e.g., "Codecov Dashboard")</li>
+              <li>Give it a name (e.g., "Coverage Dashboard")</li>
               <li>Select scopes: <code className="bg-muted px-1 py-0.5 rounded text-xs">repo</code> and <code className="bg-muted px-1 py-0.5 rounded text-xs">read:org</code></li>
               <li>Click "Generate token" and copy it</li>
             </ol>
@@ -97,7 +97,7 @@ export function TokenSetup({ open, onOpenChange, onTokenSaved }: TokenSetupProps
               asChild
             >
               <a
-                href="https://github.com/settings/tokens/new?scopes=repo,read:org&description=Codecov%20Dashboard"
+                href="https://github.com/settings/tokens/new?scopes=repo,read:org&description=Coverage%20Dashboard"
                 target="_blank"
                 rel="noopener noreferrer"
               >

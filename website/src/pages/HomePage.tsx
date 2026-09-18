@@ -30,7 +30,7 @@ export default function HomePage() {
       <div className="mx-auto max-w-7xl px-6">
         {/* Hero */}
         <div className="py-16 text-center">
-          <h1 className="text-5xl font-bold mb-4">Codecov Dashboard</h1>
+          <h1 className="text-5xl font-bold mb-4">Coverage Dashboard</h1>
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
             View test results and code coverage metrics from your GitHub
             repositories
