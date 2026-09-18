@@ -144,95 +144,97 @@ export class ReportFormatter {
     results: AggregatedCoverageResults,
     options: ReportFormatOptions,
   ): void {
-    // Calculate metrics
-    const totalMissing = results.totalMisses || 0;
-    // Use explicit patch coverage if available, otherwise fallback to lineRate (legacy/project)
-    const patchRate =
-      results.patchCoverageRate !== undefined
-        ? results.patchCoverageRate.toFixed(2)
-        : results.lineRate.toFixed(2);
-
     const patchTarget = options.patchTarget ?? 80;
+    const patchBreakdown = options.patchFileBreakdown;
 
-    // Line 1: Patch coverage (emoji based on patch rate, not project misses)
-    const patchEmoji =
-      parseFloat(patchRate) >= patchTarget ? ":white_check_mark:" : ":x:";
-
-    // Build message with clear separation of patch coverage and project misses
-    let patchMessage = `${patchEmoji} Patch coverage is **${patchRate}%**.`;
-    if (totalMissing > 0) {
-      patchMessage += ` Project has **${totalMissing}** uncovered lines.`;
-    }
-    lines.push(patchMessage);
-
-    // Line 2: Project coverage with comparison info
-    if (results.comparison) {
-      const baseRef = results.comparison.baseCommit
-        ? `\`${results.comparison.baseCommit.substring(0, 7)}\``
-        : "`base`";
-      const headRef = results.comparison.headCommit
-        ? `\`${results.comparison.headCommit.substring(0, 7)}\``
-        : "`head`";
-      const emoji = results.comparison.improvement
-        ? ":white_check_mark:"
-        : results.comparison.deltaLineRate < 0
-          ? ":x:"
-          : ":white_check_mark:";
+    if (results.patchCoverageRate !== undefined) {
+      const patchRate = results.patchCoverageRate.toFixed(2);
+      const patchEmoji =
+        results.patchCoverageRate >= patchTarget ? ":white_check_mark:" : ":x:";
+      const coveredLines =
+        patchBreakdown?.reduce(
+          (total, file) => total + file.coveredLines.length,
+          0,
+        ) ?? 0;
+      const totalLines =
+        patchBreakdown?.reduce(
+          (total, file) =>
+            total + file.coveredLines.length + file.missedLines.length,
+          0,
+        ) ?? 0;
+      const patchDetails =
+        totalLines > 0
+          ? ` (${coveredLines} of ${totalLines} changed executable lines covered; target ${patchTarget}%).`
+          : ` (no changed executable lines found; target ${patchTarget}%).`;
       lines.push(
-        `${emoji} Project coverage is **${results.lineRate}%**. Comparing base (${baseRef}) to head (${headRef}).`,
+        `${patchEmoji} Patch coverage is **${patchRate}%**${patchDetails}`,
+      );
+    } else {
+      lines.push(
+        ":information_source: Patch coverage was not calculated for this run.",
       );
     }
+
+    let projectMessage = `Project statement coverage is **${results.lineRate.toFixed(2)}%**`;
+    if (results.comparison) {
+      const delta = results.comparison.deltaLineRate;
+      const baseRef = results.comparison.baseCommit
+        ? `\`${results.comparison.baseCommit.substring(0, 7)}\``
+        : "base";
+      const headRef = results.comparison.headCommit
+        ? `\`${results.comparison.headCommit.substring(0, 7)}\``
+        : "head";
+      const change =
+        delta === 0
+          ? `unchanged from base (${baseRef}) to head (${headRef})`
+          : `${delta > 0 ? "up" : "down"} ${Math.abs(delta).toFixed(2)} percentage points from base (${baseRef}) to head (${headRef})`;
+      projectMessage += ` (${change})`;
+    }
+    lines.push(`${projectMessage}.`);
     lines.push("");
 
     const filesMode = options.filesMode || "changed";
-    const patchBreakdown = options.patchFileBreakdown;
 
-    // When patch file breakdown is available (PR context), use it to show
-    // only the uncovered lines within the diff rather than all project-wide
-    // uncovered lines. This matches the behavior of Codecov's official comments.
-    if (patchBreakdown && filesMode !== "none") {
-      const patchFilesWithMissing = patchBreakdown
-        .filter((f) => f.missedLines.length > 0 || f.partialLines.length > 0)
-        .sort(
-          (a, b) =>
-            b.missedLines.length +
-            b.partialLines.length -
-            (a.missedLines.length + a.partialLines.length),
-        );
+    // When patch file breakdown is available (PR context), show every file
+    // with measured changed executable lines so the patch summary is auditable.
+    if (patchBreakdown && patchBreakdown.length > 0 && filesMode !== "none") {
+      const patchFiles = [...patchBreakdown].sort(
+        (a, b) =>
+          b.missedLines.length +
+          b.partialLines.length -
+          (a.missedLines.length + a.partialLines.length),
+      );
 
-      if (patchFilesWithMissing.length > 0) {
-        lines.push("<details>");
-        lines.push(
-          `<summary>Files with missing lines (${patchFilesWithMissing.length})</summary>`,
-        );
-        lines.push("");
-        lines.push("| File | Patch % | Lines |");
-        lines.push("|------|---------|-------|");
+      lines.push("<details>");
+      lines.push(
+        `<summary>Changed files with executable lines (${patchFiles.length})</summary>`,
+      );
+      lines.push("");
+      lines.push("| File | Patch coverage | Changed executable lines |");
+      lines.push("|------|----------------|--------------------------|");
 
-        for (const file of patchFilesWithMissing) {
-          const filePath = this.normalizeFilePath(file.path);
-          const fileCell = this.formatFileCell(filePath, options.githubContext);
-          const missingCount = file.missedLines.length;
-          const partialCount = file.partialLines.length;
+      for (const file of patchFiles) {
+        const filePath = this.normalizeFilePath(file.path);
+        const fileCell = this.formatFileCell(filePath, options.githubContext);
+        const coveredCount = file.coveredLines.length;
+        const missedCount = file.missedLines.length;
+        const totalCount = coveredCount + missedCount;
+        const lineDetails = [`${coveredCount}/${totalCount} covered`];
 
-          let linesText = "";
-          if (missingCount > 0 && partialCount > 0) {
-            linesText = `:warning: ${missingCount} Missing and ${partialCount} partials`;
-          } else if (missingCount > 0) {
-            linesText = `:warning: ${missingCount} Missing`;
-          } else if (partialCount > 0) {
-            linesText = `:warning: ${partialCount} partials`;
-          }
-
-          lines.push(
-            `| ${fileCell} | ${file.percentage.toFixed(2)}% | ${linesText} |`,
-          );
+        if (missedCount > 0) {
+          lineDetails.push(`missed: ${file.missedLines.join(", ")}`);
+        }
+        if (file.partialLines.length > 0) {
+          lineDetails.push(`partial branches: ${file.partialLines.join(", ")}`);
         }
 
-        lines.push("");
-        lines.push("</details>");
-        lines.push("");
+        lines.push(
+          `| ${fileCell} | ${file.percentage.toFixed(2)}% | ${lineDetails.join("; ")} |`,
+        );
       }
+      lines.push("");
+      lines.push("</details>");
+      lines.push("");
     } else if (filesMode !== "none") {
       // Fallback: no patch breakdown available (push events / non-PR context)
       // Show project-wide missing lines as before.
@@ -388,7 +390,12 @@ export class ReportFormatter {
     const coverageDelta = `${this.formatDeltaSimple(
       comparison.deltaLineRate,
     )}%`;
-    const coveragePrefix = comparison.deltaLineRate >= 0 ? "+" : "-";
+    const coveragePrefix =
+      comparison.deltaLineRate > 0
+        ? "+"
+        : comparison.deltaLineRate < 0
+          ? "-"
+          : " ";
     lines.push(
       `${coveragePrefix} Coverage${this.padCol(baseCoverage, 10)}${this.padCol(
         currentCoverage,
@@ -398,7 +405,7 @@ export class ReportFormatter {
 
     lines.push("==========================================");
 
-    // Neutral metrics (Files, Lines, Branches)
+    // Neutral metrics (Files, tracked lines, Branches)
     const baseFiles = String(comparison.baseFiles || 0);
     const currentFiles = String(comparison.currentFiles || 0);
     const deltaFiles = this.formatDeltaSimple(comparison.deltaFiles || 0);
@@ -413,7 +420,7 @@ export class ReportFormatter {
     const currentLines = String(comparison.currentLines || 0);
     const deltaLines = this.formatDeltaSimple(comparison.deltaLines || 0);
     lines.push(
-      `  Lines   ${this.padCol(baseLines, 10)}${this.padCol(
+      `  Tracked lines${this.padCol(baseLines, 10)}${this.padCol(
         currentLines,
         10,
       )}${this.padCol(deltaLines, 10)}`,
@@ -431,34 +438,52 @@ export class ReportFormatter {
 
     lines.push("==========================================");
 
-    // Hits (green - positive indicator)
+    // Hits (green when increased, neutral when unchanged)
     const baseHits = String(comparison.baseHits || 0);
     const currentHits = String(comparison.currentHits || 0);
     const deltaHits = this.formatDeltaSimple(comparison.deltaHits || 0);
+    const hitsPrefix =
+      comparison.deltaHits && comparison.deltaHits > 0
+        ? "+"
+        : comparison.deltaHits && comparison.deltaHits < 0
+          ? "-"
+          : " ";
     lines.push(
-      `+ Hits    ${this.padCol(baseHits, 10)}${this.padCol(
+      `${hitsPrefix} Hits    ${this.padCol(baseHits, 10)}${this.padCol(
         currentHits,
         10,
       )}${this.padCol(deltaHits, 10)}`,
     );
 
-    // Misses (red - negative indicator)
+    // Misses (green when reduced, red when increased)
     const baseMisses = String(comparison.baseMisses || 0);
     const currentMisses = String(comparison.currentMisses || 0);
     const deltaMisses = this.formatDeltaSimple(comparison.deltaMisses || 0);
+    const missesPrefix =
+      comparison.deltaMisses && comparison.deltaMisses < 0
+        ? "+"
+        : comparison.deltaMisses && comparison.deltaMisses > 0
+          ? "-"
+          : " ";
     lines.push(
-      `- Misses  ${this.padCol(baseMisses, 10)}${this.padCol(
+      `${missesPrefix} Misses  ${this.padCol(baseMisses, 10)}${this.padCol(
         currentMisses,
         10,
       )}${this.padCol(deltaMisses, 10)}`,
     );
 
-    // Partials (red - negative indicator)
+    // Partials (green when reduced, red when increased)
     const basePartials = String(comparison.basePartials || 0);
     const currentPartials = String(comparison.currentPartials || 0);
     const deltaPartials = this.formatDeltaSimple(comparison.deltaPartials || 0);
+    const partialsPrefix =
+      comparison.deltaPartials && comparison.deltaPartials < 0
+        ? "+"
+        : comparison.deltaPartials && comparison.deltaPartials > 0
+          ? "-"
+          : " ";
     lines.push(
-      `- Partials${this.padCol(basePartials, 10)}${this.padCol(
+      `${partialsPrefix} Partials${this.padCol(basePartials, 10)}${this.padCol(
         currentPartials,
         10,
       )}${this.padCol(deltaPartials, 10)}`,
@@ -636,7 +661,7 @@ export class ReportFormatter {
       comparison.testsRemoved.length === 0 &&
       comparison.deltaTotal === 0
     ) {
-      lines.push("✨ No test changes detected");
+      lines.push("✨ Test counts unchanged from base.");
       lines.push("");
     }
   }

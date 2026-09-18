@@ -146,6 +146,31 @@ describe("ReportFormatter", () => {
     expect(comment).toContain("2m 5s");
   });
 
+  it("reports unchanged test counts without claiming test definitions are unchanged", () => {
+    const comment = formatter.formatReport({
+      totalTests: 10,
+      passedTests: 10,
+      failedTests: 0,
+      skippedTests: 0,
+      totalTime: 1,
+      passRate: 100,
+      failedTestCases: [],
+      comparison: {
+        testsAdded: [],
+        testsRemoved: [],
+        testsBroken: [],
+        testsFixed: [],
+        deltaTotal: 0,
+        deltaPassed: 0,
+        deltaFailed: 0,
+        deltaSkipped: 0,
+      },
+    });
+
+    expect(comment).toContain("✨ Test counts unchanged from base.");
+    expect(comment).not.toContain("No test changes detected");
+  });
+
   it("should add identifier to comment", () => {
     const comment = "Test comment";
     const withIdentifier = formatter.addIdentifier(comment);
@@ -278,12 +303,9 @@ describe("ReportFormatter", () => {
 
       // Should show checkmark because patch coverage is >= configured target (70%)
       expect(comment).toContain(
-        ":white_check_mark: Patch coverage is **77.56%**.",
+        ":white_check_mark: Patch coverage is **77.56%** (no changed executable lines found; target 70%).",
       );
-      // Should show project misses as separate info
-      expect(comment).toContain("Project has **1348** uncovered lines.");
-      // Should NOT have the old conflated message format
-      expect(comment).not.toContain("with **1348 lines** missing coverage");
+      expect(comment).not.toContain("Project has **1348** uncovered lines.");
     });
 
     it("should show resolved pull request commit references", () => {
@@ -309,7 +331,7 @@ describe("ReportFormatter", () => {
       });
 
       expect(comment).toContain(
-        "Comparing base (`0123456`) to head (`abcdef0`).",
+        "unchanged from base (`0123456`) to head (`abcdef0`)",
       );
     });
 
@@ -333,9 +355,10 @@ describe("ReportFormatter", () => {
       });
 
       // Should show X because patch coverage is below configured target (80%)
-      expect(comment).toContain(":x: Patch coverage is **77.56%**.");
-      // Should show project misses as separate info
-      expect(comment).toContain("Project has **500** uncovered lines.");
+      expect(comment).toContain(
+        ":x: Patch coverage is **77.56%** (no changed executable lines found; target 80%).",
+      );
+      expect(comment).not.toContain("Project has **500** uncovered lines.");
     });
 
     it("should show checkmark with no project misses message when totalMisses is 0", () => {
@@ -357,13 +380,13 @@ describe("ReportFormatter", () => {
 
       // Should show checkmark
       expect(comment).toContain(
-        ":white_check_mark: Patch coverage is **100.00%**.",
+        ":white_check_mark: Patch coverage is **100.00%** (no changed executable lines found; target 80%).",
       );
       // Should NOT mention project uncovered lines
       expect(comment).not.toContain("uncovered lines");
     });
 
-    it("should use lineRate as fallback when patchCoverageRate is undefined", () => {
+    it("should report patch coverage as unavailable when it was not calculated", () => {
       const coverageResults: AggregatedCoverageResults = {
         totalStatements: 1000,
         coveredStatements: 850,
@@ -380,9 +403,8 @@ describe("ReportFormatter", () => {
 
       const comment = formatter.formatReport(undefined, coverageResults);
 
-      // Should use lineRate (85%) which is >= 80%, so checkmark
       expect(comment).toContain(
-        ":white_check_mark: Patch coverage is **85.00%**.",
+        ":information_source: Patch coverage was not calculated for this run.",
       );
     });
 
@@ -516,6 +538,78 @@ describe("ReportFormatter", () => {
     });
 
     describe("Patch file breakdown (PR context)", () => {
+      it("separates patch coverage from unchanged project metrics", () => {
+        const comment = formatter.formatReport(
+          undefined,
+          {
+            ...coverageWithMissingFiles,
+            lineRate: 64.53,
+            patchCoverageRate: 50,
+            totalHits: 1332,
+            totalMisses: 733,
+            totalPartials: 139,
+            comparison: {
+              filesAdded: [],
+              filesRemoved: [],
+              filesChanged: [],
+              deltaLineRate: 0,
+              deltaBranchRate: 0,
+              deltaTotalStatements: 0,
+              deltaCoveredStatements: 0,
+              deltaTotalConditionals: 0,
+              deltaCoveredConditionals: 0,
+              deltaTotalMethods: 0,
+              deltaCoveredMethods: 0,
+              improvement: false,
+              baseBranch: "main",
+              baseCommit: "5d43891",
+              headCommit: "154924e",
+              baseHits: 1332,
+              currentHits: 1332,
+              baseMisses: 733,
+              currentMisses: 733,
+              basePartials: 139,
+              currentPartials: 139,
+            },
+          },
+          {
+            patchTarget: 80,
+            patchFileBreakdown: [
+              {
+                path: "src/covered.ts",
+                coveredLines: [10],
+                missedLines: [],
+                partialLines: [],
+                percentage: 100,
+              },
+              {
+                path: "src/missed.ts",
+                coveredLines: [],
+                missedLines: [20],
+                partialLines: [],
+                percentage: 0,
+              },
+            ],
+          },
+        );
+
+        expect(comment).toContain(
+          ":x: Patch coverage is **50.00%** (1 of 2 changed executable lines covered; target 80%).",
+        );
+        expect(comment).toContain(
+          "Project statement coverage is **64.53%** (unchanged from base (`5d43891`) to head (`154924e`)).",
+        );
+        expect(comment).not.toContain("Project has **733** uncovered lines.");
+        expect(comment).toContain("Changed files with executable lines (2)");
+        expect(comment).toContain("`src/covered.ts` | 100.00% | 1/1 covered |");
+        expect(comment).toContain(
+          "`src/missed.ts` | 0.00% | 0/1 covered; missed: 20 |",
+        );
+        expect(comment).toContain("  Coverage    64.53%    64.53%        —%");
+        expect(comment).toContain("  Hits          1332      1332         —");
+        expect(comment).toContain("  Misses         733       733         —");
+      });
+
       const patchFileBreakdown: PatchFileCoverage[] = [
         {
           path: "src/args.rs",
@@ -549,15 +643,12 @@ describe("ReportFormatter", () => {
           },
         );
 
-        // Should show only files with missing or partial lines in the patch
-        expect(comment).toContain("Files with missing lines (2)");
-        // Full paths should be shown
+        expect(comment).toContain("Changed files with executable lines (3)");
         expect(comment).toContain("`src/args.rs`");
-        expect(comment).toContain("2 Missing");
+        expect(comment).toContain("10/12 covered; missed: 20, 21");
         expect(comment).toContain("`src/types/bytes.rs`");
-        expect(comment).toContain("1 partials");
-        // clean-file.rs has no missing or partial lines in the patch, should be excluded
-        expect(comment).not.toContain("clean-file.rs");
+        expect(comment).toContain("5/5 covered; partial branches: 10");
+        expect(comment).toContain("`src/clean-file.rs`");
       });
 
       it("should use patch percentage instead of project lineRate", () => {
@@ -592,11 +683,13 @@ describe("ReportFormatter", () => {
           },
         );
 
-        expect(comment).toContain("Files with missing lines (1)");
-        expect(comment).toContain("2 Missing and 1 partials");
+        expect(comment).toContain("Changed files with executable lines (1)");
+        expect(comment).toContain(
+          "3/5 covered; missed: 4, 5; partial branches: 3",
+        );
       });
 
-      it("should hide file table when patchFileBreakdown has no files with missing lines", () => {
+      it("should show fully covered changed files when patchFileBreakdown is available", () => {
         const cleanBreakdown: PatchFileCoverage[] = [
           {
             path: "src/clean.rs",
@@ -615,7 +708,8 @@ describe("ReportFormatter", () => {
           },
         );
 
-        expect(comment).not.toContain("Files with missing lines");
+        expect(comment).toContain("Changed files with executable lines (1)");
+        expect(comment).toContain("`src/clean.rs` | 100.00% | 3/3 covered |");
       });
 
       it("should hide file table when filesMode is none even with patchFileBreakdown", () => {
@@ -628,7 +722,7 @@ describe("ReportFormatter", () => {
           },
         );
 
-        expect(comment).not.toContain("Files with missing lines");
+        expect(comment).not.toContain("Changed files with executable lines");
       });
 
       it("should sort patch files by total missing + partial lines descending", () => {
@@ -680,7 +774,7 @@ describe("ReportFormatter", () => {
         expect(comment).toContain("`src/dot-prefixed.ts`");
       });
 
-      it("should still show project uncovered lines in summary when patchFileBreakdown is provided", () => {
+      it("should not attribute project-wide uncovered lines to the patch summary", () => {
         const comment = formatter.formatReport(
           undefined,
           coverageWithMissingFiles,
@@ -689,8 +783,7 @@ describe("ReportFormatter", () => {
           },
         );
 
-        // The summary line should still mention project-wide uncovered lines
-        expect(comment).toContain("Project has **20** uncovered lines.");
+        expect(comment).not.toContain("Project has **20** uncovered lines.");
       });
     });
 
