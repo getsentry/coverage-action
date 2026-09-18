@@ -14,7 +14,7 @@ export function Layout() {
             className="flex items-center gap-2 font-semibold hover:opacity-80 transition-opacity"
           >
             <CircleGauge className="h-5 w-5" />
-            <span>Codecov Dashboard</span>
+            <span>Coverage Dashboard</span>
           </Link>
           <div className="flex items-center gap-2">
             <ThemeToggle />
@@ -38,7 +38,7 @@ export function Layout() {
             rel="noopener noreferrer"
             className="text-primary hover:underline"
           >
-            codecov-action
+            Coverage Action
           </a>
         </div>
       </footer>

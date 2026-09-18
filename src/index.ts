@@ -449,7 +449,7 @@ async function run() {
       await githubClient.postOrUpdateComment(prCommentBody, commentKey);
     }
 
-    core.info("✅ Codecov Action completed successfully!");
+    core.info("✅ Coverage Action completed successfully!");
 
     // Fail if thresholds met and fail-on-error is true
     if (coverageChecksFailed && coverageConfig.failOnError) {

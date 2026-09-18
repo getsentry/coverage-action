@@ -1,4 +1,4 @@
-name: Codecov Action
+name: Coverage Action
 description: Test results and coverage reporting for GitHub Actions with multi-format support
 branding:
   icon: activity
