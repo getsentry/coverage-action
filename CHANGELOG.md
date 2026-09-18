@@ -1,3 +1,24 @@
+## 0.4.1
+
+### Bug Fixes 🐛
+
+#### Deps
+
+- Upgrade adm-zip to 0.6.1 by @MathurAditya724 in [#111](https://github.com/getsentry/coverage-action/pull/111)
+- Update js-yaml and align Vitest packages by @MathurAditya724 in [#107](https://github.com/getsentry/coverage-action/pull/107)
+- Resolve Dependabot alerts by @MathurAditya724 in [#101](https://github.com/getsentry/coverage-action/pull/101)
+
+#### Website
+
+- Restore dashboard data loading and deep links by @MathurAditya724 in [#106](https://github.com/getsentry/coverage-action/pull/106)
+- Validate GitHub repository URLs by @MathurAditya724 in [#102](https://github.com/getsentry/coverage-action/pull/102)
+
+#### Other
+
+- (comment) Clarify patch coverage results by @MathurAditya724 in [#110](https://github.com/getsentry/coverage-action/pull/110)
+- (status) Report on PR head commit and diff against merge commit by @jared-outpost in [#108](https://github.com/getsentry/coverage-action/pull/108)
+- Use Coverage branding in reports and dashboard by @MathurAditya724 in [#109](https://github.com/getsentry/coverage-action/pull/109)
+
 ## 0.4.0
 
 ### Bug Fixes 🐛
