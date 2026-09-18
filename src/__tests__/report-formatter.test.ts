@@ -335,6 +335,63 @@ describe("ReportFormatter", () => {
       );
     });
 
+    it("labels the detailed coverage diff with the pull request number", () => {
+      const comment = formatter.formatReport(
+        undefined,
+        {
+          ...coverageWithMissingFiles,
+          comparison: {
+            filesAdded: [],
+            filesRemoved: [],
+            filesChanged: [],
+            deltaLineRate: 0,
+            deltaBranchRate: 0,
+            deltaTotalStatements: 0,
+            deltaCoveredStatements: 0,
+            deltaTotalConditionals: 0,
+            deltaCoveredConditionals: 0,
+            deltaTotalMethods: 0,
+            deltaCoveredMethods: 0,
+            improvement: false,
+          },
+        },
+        {
+          githubContext: {
+            owner: "getsentry",
+            repo: "coverage-action",
+            prNumber: 42,
+            serverUrl: "https://github.com",
+          },
+        },
+      );
+
+      expect(comment).toContain("#42");
+      expect(comment).not.toContain("#PR");
+    });
+
+    it("formats coverage deltas with two decimal places", () => {
+      const comment = formatter.formatReport(undefined, {
+        ...coverageWithMissingFiles,
+        lineRate: 65.63,
+        comparison: {
+          filesAdded: [],
+          filesRemoved: [],
+          filesChanged: [],
+          deltaLineRate: 1.1,
+          deltaBranchRate: 0,
+          deltaTotalStatements: 0,
+          deltaCoveredStatements: 0,
+          deltaTotalConditionals: 0,
+          deltaCoveredConditionals: 0,
+          deltaTotalMethods: 0,
+          deltaCoveredMethods: 0,
+          improvement: true,
+        },
+      });
+
+      expect(comment).toContain("+1.10%");
+    });
+
     it("should show X when patch coverage is below configured target", () => {
       const coverageResults: AggregatedCoverageResults = {
         totalStatements: 1000,

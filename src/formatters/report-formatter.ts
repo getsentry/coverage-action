@@ -281,7 +281,11 @@ export class ReportFormatter {
 
     // Coverage diff (collapsible)
     if (results.comparison) {
-      this.addDetailedCoverageDiff(lines, results);
+      this.addDetailedCoverageDiff(
+        lines,
+        results,
+        options.githubContext?.prNumber,
+      );
     }
 
     // Flags section (collapsible)
@@ -360,12 +364,13 @@ export class ReportFormatter {
   private addDetailedCoverageDiff(
     lines: string[],
     results: AggregatedCoverageResults,
+    prNumber?: number,
   ): void {
     const comparison = results.comparison;
     if (!comparison) return;
 
     const baseBranch = comparison.baseBranch || "main";
-    const prLabel = "#PR";
+    const prLabel = prNumber ? `#${prNumber}` : "#PR";
 
     lines.push("<details>");
     lines.push("<summary>Coverage diff</summary>");
@@ -387,9 +392,10 @@ export class ReportFormatter {
       results.lineRate - comparison.deltaLineRate
     ).toFixed(2)}%`;
     const currentCoverage = `${results.lineRate.toFixed(2)}%`;
-    const coverageDelta = `${this.formatDeltaSimple(
-      comparison.deltaLineRate,
-    )}%`;
+    const coverageDelta =
+      comparison.deltaLineRate === 0
+        ? "—%"
+        : `${this.formatCoverageDelta(comparison.deltaLineRate)}%`;
     const coveragePrefix =
       comparison.deltaLineRate > 0
         ? "+"
