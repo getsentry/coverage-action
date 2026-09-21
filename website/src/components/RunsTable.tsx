@@ -28,7 +28,7 @@ export function RunsTable({ data }: RunsTableProps) {
 
   return (
     <div className="rounded-md border">
-      <Table>
+      <Table aria-label="Recent runs">
         <TableHeader>
           <TableRow>
             <TableHead>Date</TableHead>
@@ -97,4 +97,3 @@ export function RunsTable({ data }: RunsTableProps) {
     </div>
   );
 }
-

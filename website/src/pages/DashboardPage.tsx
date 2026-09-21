@@ -1,6 +1,6 @@
 import { skipToken, useQuery } from "@tanstack/react-query";
 import { Activity, AlertCircle } from "lucide-react";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BranchSelector } from "../components/BranchSelector";
 import { CoverageChart } from "../components/CoverageChart";
 import { DashboardContentSkeleton } from "../components/DashboardSkeleton";
+import { dedupeFiles, FileCoverageTree } from "../components/FileCoverageTree";
+import { FileSourceDialog } from "../components/FileSourceDialog";
 import { RunsTable } from "../components/RunsTable";
 import { StatCard } from "../components/StatCard";
 import { TestResultsChart } from "../components/TestResultsChart";
@@ -15,6 +17,7 @@ import { TimeRangeFilter } from "../components/TimeRangeFilter";
 import { useArtifacts } from "../hooks/useArtifacts";
 import { useBranches } from "../hooks/useBranches";
 import { githubService, type RepoInfo } from "../services/githubAPI";
+import type { FileCoverage } from "../types";
 
 const VALID_DAYS = new Set([7, 30, 90, 365]);
 const DEFAULT_DAYS = 7;
@@ -109,6 +112,18 @@ export default function DashboardPage() {
   // Calculate stats from latest data point
   const latestData = data.length > 0 ? data[data.length - 1] : null;
   const previousData = data.length > 1 ? data[data.length - 2] : null;
+
+  // Drill-down state: the file whose source is open in the Files tab.
+  const [activeTab, setActiveTab] = useState<"overview" | "files">("overview");
+  const [selectedFile, setSelectedFile] = useState<FileCoverage | null>(null);
+  const [sourceDialogOpen, setSourceDialogOpen] = useState(false);
+
+  // Artifacts written before per-file coverage report no files at all.
+  const latestFiles = latestData?.coverage?.files ?? [];
+  // Merged reports can repeat a file; the tab counts and lists it once.
+  const uniqueFiles = useMemo(() => dedupeFiles(latestFiles), [latestFiles]);
+  // Reports without files have nothing to show in the Files tab, so it is hidden.
+  const tab = uniqueFiles.length > 0 ? activeTab : "overview";
 
   const getStatTrend = (
     current: number | undefined,
@@ -259,8 +274,30 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {/* View tabs -- Files only exists when the latest report has per-file data */}
+      {uniqueFiles.length > 0 && (
+        <div className="mb-6 flex items-center gap-2">
+          <Button
+            variant={tab === "overview" ? "default" : "outline"}
+            size="sm"
+            aria-pressed={tab === "overview"}
+            onClick={() => setActiveTab("overview")}
+          >
+            Overview
+          </Button>
+          <Button
+            variant={tab === "files" ? "default" : "outline"}
+            size="sm"
+            aria-pressed={tab === "files"}
+            onClick={() => setActiveTab("files")}
+          >
+            Files
+          </Button>
+        </div>
+      )}
+
       {/* Stats Overview */}
-      {latestData && (
+      {tab === "overview" && latestData && (
         <div
           className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8 transition-opacity duration-200 ${showingStaleData ? "opacity-60" : ""}`}
         >
@@ -316,7 +353,7 @@ export default function DashboardPage() {
       )}
 
       {/* Charts */}
-      {data.length > 0 && (
+      {tab === "overview" && data.length > 0 && (
         <div
           className={`grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8 transition-opacity duration-200 ${showingStaleData ? "opacity-60" : ""}`}
         >
@@ -340,8 +377,74 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {/* Files tab: octocov-style coverage tree for the latest run */}
+      {tab === "files" && latestData?.coverage && (
+        <div
+          className={`mb-8 transition-opacity duration-200 ${showingStaleData ? "opacity-60" : ""}`}
+        >
+          <Card>
+            <CardHeader>
+              <CardTitle>File Coverage</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div>
+                <div className="flex items-baseline justify-between">
+                  <span className="text-sm text-muted-foreground">
+                    Overall line coverage
+                  </span>
+                  <span className="text-2xl font-semibold tabular-nums">
+                    {latestData.coverage.lineRate.toFixed(1)}%
+                  </span>
+                </div>
+                <div className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-muted">
+                  <div
+                    className={`h-full rounded-full ${
+                      latestData.coverage.lineRate >= 80
+                        ? "bg-emerald-500"
+                        : latestData.coverage.lineRate >= 50
+                          ? "bg-amber-500"
+                          : "bg-red-500"
+                    }`}
+                    style={{ width: `${latestData.coverage.lineRate}%` }}
+                  />
+                </div>
+                <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted-foreground">
+                  <span>
+                    Covered{" "}
+                    <span className="font-medium text-foreground tabular-nums">
+                      {latestData.coverage.coveredStatements}/
+                      {latestData.coverage.totalStatements}
+                    </span>
+                  </span>
+                  <span>
+                    Branch{" "}
+                    <span className="font-medium text-foreground tabular-nums">
+                      {latestData.coverage.branchRate.toFixed(1)}%
+                    </span>
+                  </span>
+                  <span>
+                    Files{" "}
+                    <span className="font-medium text-foreground tabular-nums">
+                      {uniqueFiles.length}
+                    </span>
+                  </span>
+                </div>
+              </div>
+
+              <FileCoverageTree
+                files={uniqueFiles}
+                onFileSelect={(file) => {
+                  setSelectedFile(file);
+                  setSourceDialogOpen(true);
+                }}
+              />
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       {/* Recent Runs */}
-      {data.length > 0 && (
+      {tab === "overview" && data.length > 0 && (
         <div
           className={`transition-opacity duration-200 ${showingStaleData ? "opacity-60" : ""}`}
         >
@@ -355,6 +458,15 @@ export default function DashboardPage() {
           </Card>
         </div>
       )}
+
+      <FileSourceDialog
+        file={selectedFile}
+        open={sourceDialogOpen}
+        onOpenChange={setSourceDialogOpen}
+        owner={org ?? ""}
+        repo={repo ?? ""}
+        ref={latestData?.commitSha ?? ""}
+      />
     </div>
   );
 }
