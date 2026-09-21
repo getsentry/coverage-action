@@ -162,7 +162,6 @@ jobs:
 
 - [ ] GitHub OAuth for private repos and higher rate limits
 - [ ] Commit comparison view
-- [ ] File-level coverage drill-down
 - [ ] Export to CSV/PDF
 - [ ] Real-time updates via webhooks
 - [ ] Coverage badges generation
