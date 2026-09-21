@@ -352,7 +352,9 @@ export function FileCoverageTree({
         <div className="flex h-[200px] items-center justify-center text-muted-foreground">
           {files.length === 0
             ? "No per-file coverage available"
-            : `No files match "${query}"`}
+            : query.trim()
+              ? `No files match "${query}"`
+              : "No files are visible with the current exclusions"}
         </div>
       ) : (
         <div className="rounded-md border">

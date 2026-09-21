@@ -1,4 +1,5 @@
 import { skipToken, useQuery } from "@tanstack/react-query";
+import ignore from "ignore";
 import { Activity, AlertCircle } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
@@ -126,6 +127,28 @@ export default function DashboardPage() {
     () => mergeFiles(latestFiles, repo ?? ""),
     [latestFiles, repo],
   );
+  // The repository's root .gitignore at the displayed commit. A missing file
+  // yields null, so no exclusions are applied.
+  const { data: gitignoreContent } = useQuery<string | null>({
+    queryKey: ["gitignore", org, repo, latestData?.commitSha],
+    queryFn:
+      org && repo && latestData?.commitSha
+        ? () => githubService.getGitignore(org, repo, latestData.commitSha)
+        : skipToken,
+    enabled: !!org && !!repo && !!latestData?.commitSha,
+  });
+  // Coverage tools still report files the repository ignores; keep them out of
+  // the browser tree while the headline totals keep describing the whole report.
+  // The exclusion is a pure derivation over the already-fetched gitignore, so a
+  // future per-view toggle can disable it by returning displayFiles unchanged.
+  const filteredFiles = useMemo(() => {
+    if (!gitignoreContent || displayFiles.length === 0) return displayFiles;
+    const ig = ignore().add(gitignoreContent);
+    return displayFiles.filter((file) => {
+      const path = file.path.replace(/^\/+/, "");
+      return !ig.ignores(path);
+    });
+  }, [displayFiles, gitignoreContent]);
   // Reports without files have nothing to show in the Files tab, so it is hidden.
   const tab = displayFiles.length > 0 ? activeTab : "overview";
 
@@ -437,7 +460,7 @@ export default function DashboardPage() {
               </div>
 
               <FileCoverageTree
-                files={displayFiles}
+                files={filteredFiles}
                 onFileSelect={(file) => {
                   setSelectedFile(file);
                   setSourceDialogOpen(true);
