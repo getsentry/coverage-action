@@ -11,7 +11,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import type { FileCoverage } from "../types";
+import { toRepoRelativePath } from "../services/githubAPI";
+import type { FileCoverage, LineCoverage } from "../types";
 
 interface FileCoverageTreeProps {
   files: FileCoverage[];
@@ -43,21 +44,107 @@ function normalizePath(file: FileCoverage): string {
 }
 
 /**
- * Coverage reports list a file more than once when several reports are merged
- * into one artifact. Keep the first occurrence so the tree shows one row per
- * file. Matching stays case-sensitive, so files that differ only by case are
- * never merged.
+ * Combine per-line detail across report shards. A line is missed only when no
+ * shard covered it; partial annotations remain whenever a shard reports them.
  */
-export function dedupeFiles(files: FileCoverage[]): FileCoverage[] {
-  const seen = new Set<string>();
-  const unique: FileCoverage[] = [];
+function mergeLines(files: FileCoverage[]): {
+  lines: LineCoverage[];
+  missingLines: number[];
+  partialLines: number[];
+} {
+  const lines = new Map<string, LineCoverage>();
+  const missing = new Set<number>();
+  const partial = new Set<number>();
+
   for (const file of files) {
-    const key = normalizePath(file);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    unique.push(file);
+    for (const line of file.lines) {
+      const key = `${line.lineNumber}:${line.type}`;
+      const current = lines.get(key);
+      if (!current) {
+        lines.set(key, { ...line });
+        continue;
+      }
+      current.count += line.count;
+      if (line.trueCount !== undefined || current.trueCount !== undefined) {
+        current.trueCount = (current.trueCount ?? 0) + (line.trueCount ?? 0);
+      }
+      if (line.falseCount !== undefined || current.falseCount !== undefined) {
+        current.falseCount = (current.falseCount ?? 0) + (line.falseCount ?? 0);
+      }
+    }
+    for (const line of file.missingLines) missing.add(line);
+    for (const line of file.partialLines) partial.add(line);
   }
-  return unique;
+
+  const mergedLines = [...lines.values()].sort(
+    (a, b) => a.lineNumber - b.lineNumber || a.type.localeCompare(b.type),
+  );
+  const covered = new Set(
+    mergedLines.filter((line) => line.count > 0).map((line) => line.lineNumber),
+  );
+  const missingLines = [...missing].filter((line) => !covered.has(line)).sort();
+  const partialLines = [...partial]
+    .filter((line) => !missingLines.includes(line))
+    .sort();
+  return { lines: mergedLines, missingLines, partialLines };
+}
+
+/**
+ * Coverage reports list a file more than once when several reports are merged
+ * into one artifact. Aggregate those shards so the tree agrees with the report
+ * total and source highlighting retains every shard's line detail.
+ */
+export function mergeFiles(
+  files: FileCoverage[],
+  repo: string,
+): FileCoverage[] {
+  const groups = new Map<string, FileCoverage[]>();
+  for (const file of files) {
+    const path = normalizePath({
+      ...file,
+      path: toRepoRelativePath(file.path || file.name, repo),
+    });
+    const group = groups.get(path);
+    if (group) group.push({ ...file, path });
+    else groups.set(path, [{ ...file, path }]);
+  }
+
+  return [...groups.entries()].map(([path, grouped]) => {
+    const totals = grouped.reduce(
+      (sum, file) => ({
+        statements: sum.statements + file.statements,
+        coveredStatements: sum.coveredStatements + file.coveredStatements,
+        conditionals: sum.conditionals + file.conditionals,
+        coveredConditionals: sum.coveredConditionals + file.coveredConditionals,
+        methods: sum.methods + file.methods,
+        coveredMethods: sum.coveredMethods + file.coveredMethods,
+      }),
+      {
+        statements: 0,
+        coveredStatements: 0,
+        conditionals: 0,
+        coveredConditionals: 0,
+        methods: 0,
+        coveredMethods: 0,
+      },
+    );
+    const first = grouped[0];
+    return {
+      ...first,
+      ...totals,
+      name: path.split("/").pop() ?? first.name,
+      path,
+      lineRate:
+        totals.statements === 0
+          ? 0
+          : (totals.coveredStatements / totals.statements) * 100,
+      branchRate:
+        totals.conditionals === 0
+          ? 0
+          : (totals.coveredConditionals / totals.conditionals) * 100,
+      ...mergeLines(grouped),
+    };
+  });
 }
 
 /** Aggregate each directory from its children, weighted by statement counts. */
@@ -225,7 +312,7 @@ export function FileCoverageTree({
     descending: false,
   });
 
-  const tree = useMemo(() => buildTree(dedupeFiles(files)), [files]);
+  const tree = useMemo(() => buildTree(files), [files]);
 
   const rows = useMemo(() => {
     const trimmed = query.trim().toLowerCase();
@@ -269,7 +356,10 @@ export function FileCoverageTree({
         </div>
       ) : (
         <div className="rounded-md border">
-          <Table aria-label="File coverage tree">
+          <p className="px-2 pt-2 text-xs text-muted-foreground sm:hidden">
+            Swipe horizontally to see all coverage metrics.
+          </p>
+          <Table aria-label="File coverage tree" className="min-w-[34rem]">
             <TableHeader>
               <TableRow>
                 <SortableHead
