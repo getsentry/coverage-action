@@ -105,10 +105,8 @@ export function mergeFiles(
       path: toRepoRelativePath(file.path || file.name, repo),
     });
     const group = groups.get(path);
-    groups.set(
-      path,
-      group ? [...group, { ...file, path }] : [{ ...file, path }],
-    );
+    if (group) group.push({ ...file, path });
+    else groups.set(path, [{ ...file, path }]);
   }
 
   return [...groups.entries()].map(([path, grouped]) => {
