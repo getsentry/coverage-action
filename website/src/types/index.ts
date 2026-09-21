@@ -1,3 +1,28 @@
+export interface LineCoverage {
+  lineNumber: number;
+  count: number;
+  type: "stmt" | "cond" | "method";
+  trueCount?: number;
+  falseCount?: number;
+}
+
+export interface FileCoverage {
+  name: string;
+  path: string;
+  statements: number;
+  coveredStatements: number;
+  conditionals: number;
+  coveredConditionals: number;
+  methods: number;
+  coveredMethods: number;
+  lineRate: number;
+  branchRate: number;
+  lines: LineCoverage[];
+  missingLines: number[];
+  partialLines: number[];
+  patchCoverage?: number;
+}
+
 export interface TimeSeriesDataPoint {
   date: Date;
   commitSha: string;
@@ -12,6 +37,7 @@ export interface TimeSeriesDataPoint {
     coveredConditionals: number;
     totalMethods: number;
     coveredMethods: number;
+    files?: FileCoverage[];
   };
   tests?: {
     total: number;
@@ -49,5 +75,6 @@ export interface ParsedArtifact {
     coveredConditionals: number;
     totalMethods: number;
     coveredMethods: number;
+    files?: FileCoverage[];
   };
 }
