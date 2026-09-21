@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BranchSelector } from "../components/BranchSelector";
 import { CoverageChart } from "../components/CoverageChart";
 import { DashboardContentSkeleton } from "../components/DashboardSkeleton";
-import { dedupeFiles, FileCoverageTree } from "../components/FileCoverageTree";
+import { FileCoverageTree, mergeFiles } from "../components/FileCoverageTree";
 import { FileSourceDialog } from "../components/FileSourceDialog";
 import { RunsTable } from "../components/RunsTable";
 import { StatCard } from "../components/StatCard";
@@ -120,17 +120,22 @@ export default function DashboardPage() {
 
   // Artifacts written before per-file coverage report no files at all.
   const latestFiles = latestData?.coverage?.files ?? [];
-  // Merged reports can repeat a file; the tab counts and lists it once.
-  const uniqueFiles = useMemo(() => dedupeFiles(latestFiles), [latestFiles]);
+  // Merged reports can repeat a file; aggregate them before rendering so the
+  // tree, source dialog, and headline describe the same coverage data.
+  const displayFiles = useMemo(
+    () => mergeFiles(latestFiles, repo ?? ""),
+    [latestFiles, repo],
+  );
   // Reports without files have nothing to show in the Files tab, so it is hidden.
-  const tab = uniqueFiles.length > 0 ? activeTab : "overview";
+  const tab = displayFiles.length > 0 ? activeTab : "overview";
 
   const getStatTrend = (
     current: number | undefined,
     previous: number | undefined,
   ) => {
-    if (!current || !previous) return undefined;
+    if (current === undefined || previous === undefined) return undefined;
     const diff = current - previous;
+    if (diff === 0) return undefined;
     return diff > 0 ? `+${diff.toFixed(1)}` : diff.toFixed(1);
   };
 
@@ -183,7 +188,7 @@ export default function DashboardPage() {
           <h1 className="text-2xl font-bold tracking-tight">
             {org}/{repo}
           </h1>
-          <div className="flex items-center gap-3">
+          <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center">
             <BranchSelector
               branches={branches}
               value={effectiveBranch ?? ""}
@@ -275,7 +280,7 @@ export default function DashboardPage() {
       )}
 
       {/* View tabs -- Files only exists when the latest report has per-file data */}
-      {uniqueFiles.length > 0 && (
+      {displayFiles.length > 0 && (
         <div className="mb-6 flex items-center gap-2">
           <Button
             variant={tab === "overview" ? "default" : "outline"}
@@ -425,14 +430,14 @@ export default function DashboardPage() {
                   <span>
                     Files{" "}
                     <span className="font-medium text-foreground tabular-nums">
-                      {uniqueFiles.length}
+                      {displayFiles.length}
                     </span>
                   </span>
                 </div>
               </div>
 
               <FileCoverageTree
-                files={uniqueFiles}
+                files={displayFiles}
                 onFileSelect={(file) => {
                   setSelectedFile(file);
                   setSourceDialogOpen(true);
@@ -460,6 +465,7 @@ export default function DashboardPage() {
       )}
 
       <FileSourceDialog
+        key={`${selectedFile?.path ?? ""}@${latestData?.commitSha ?? ""}`}
         file={selectedFile}
         open={sourceDialogOpen}
         onOpenChange={setSourceDialogOpen}

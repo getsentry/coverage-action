@@ -108,9 +108,13 @@ function highlightLine(line: string, language: string | null): string {
 }
 
 function lineStates(file: FileCoverage, lineCount: number): LineState[] {
-  const counts = new Map(
-    file.lines.map((line) => [line.lineNumber, line.count]),
-  );
+  const counts = new Map<number, number>();
+  for (const line of file.lines) {
+    counts.set(
+      line.lineNumber,
+      (counts.get(line.lineNumber) ?? 0) + line.count,
+    );
+  }
   const missing = new Set(file.missingLines);
   const partial = new Set(file.partialLines);
 
@@ -130,11 +134,16 @@ export function FileSourceDialog({
   repo,
   ref,
 }: FileSourceDialogProps) {
-  const [content, setContent] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [source, setSource] = useState<{
+    requestKey: string;
+    content: string;
+    resolvedPath: string | null;
+  } | null>(null);
+  const [sourceError, setSourceError] = useState<{
+    requestKey: string;
+    message: string;
+  } | null>(null);
   const [attempt, setAttempt] = useState(0);
-  const [resolvedPath, setResolvedPath] = useState<string | null>(null);
   const [draft, setDraft] = useState<string | null>(null);
   const [editingPath, setEditingPath] = useState(false);
   // A manually entered path applies only to the file it was entered for.
@@ -147,6 +156,15 @@ export function FileSourceDialog({
   const fileKey = `${filePath}@${ref}`;
   const overridePath = override?.key === fileKey ? override.path : null;
   const path = overridePath ?? filePath;
+  // State belongs to one requested file. Deriving it by this key prevents a
+  // previous file's source from being painted during a close/open transition.
+  const requestKey = `${fileKey}:${path}:${attempt}`;
+  const currentSource = source?.requestKey === requestKey ? source : null;
+  const content = currentSource?.content ?? null;
+  const error =
+    sourceError?.requestKey === requestKey ? sourceError.message : null;
+  const loading = open && Boolean(path) && content === null && error === null;
+  const resolvedPath = currentSource?.resolvedPath ?? null;
   const loadedPath = resolvedPath ?? overridePath ?? filePath;
   // The coverage report and the repository can spell the same file differently.
   const pathMismatch = content !== null && loadedPath !== filePath;
@@ -155,31 +173,30 @@ export function FileSourceDialog({
   useEffect(() => {
     if (!open || !path) return;
     let cancelled = false;
-    setLoading(true);
-    setError(null);
-    setContent(null);
-    setResolvedPath(null);
 
     githubService
       .getFileContent(owner, repo, path, ref)
       .then((result) => {
         if (cancelled) return;
-        setContent(result.content);
-        setResolvedPath(result.resolvedPath ?? null);
+        setSource({
+          requestKey,
+          content: result.content,
+          resolvedPath: result.resolvedPath ?? null,
+        });
       })
       .catch((cause: unknown) => {
         if (!cancelled) {
-          setError(cause instanceof Error ? cause.message : String(cause));
+          setSourceError({
+            requestKey,
+            message: cause instanceof Error ? cause.message : String(cause),
+          });
         }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
       });
 
     return () => {
       cancelled = true;
     };
-  }, [open, path, owner, repo, ref, attempt]);
+  }, [open, path, owner, repo, ref, requestKey]);
 
   // A closed dialog starts over, so the next file loads its reported path.
   useEffect(() => {
@@ -255,13 +272,12 @@ export function FileSourceDialog({
           </div>
         </DialogHeader>
 
-
-
         {showPathEditor && (
           <div className="rounded-md border p-3">
             {pathMismatch && (
               <p className="text-sm text-muted-foreground">
-                This file was loaded from a different path than the coverage report:{" "}
+                This file was loaded from a different path than the coverage
+                report:{" "}
                 <span className="font-mono break-all text-foreground">
                   {loadedPath}
                 </span>

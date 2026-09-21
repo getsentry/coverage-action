@@ -102,6 +102,8 @@ const MERGED_REPORT_FILES = [
 const CSHARP_REPORTED_PATH =
   "Core/Authentication/KeyStore/UserCorrelationIdentifier.cs";
 const CSHARP_REPO_PATH = `src/${CSHARP_REPORTED_PATH}`;
+const CI_REPORTED_PATH =
+  "/home/runner/work/project/project/src/partially-covered.ts";
 
 const CSHARP_FILE = {
   name: "UserCorrelationIdentifier.cs",
@@ -139,6 +141,11 @@ public sealed class UserCorrelationIdentifier
     }
 }
 `;
+
+const CI_REPORTED_FILE = {
+  ...PARTIALLY_COVERED_FILE,
+  path: CI_REPORTED_PATH,
+};
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -336,7 +343,9 @@ describe("dashboard regression coverage", () => {
     expect(await screen.findAllByText("81.8%")).toHaveLength(2);
     expect(screen.getAllByText("73.9%")).toHaveLength(2);
     expect(
-      within(screen.getByRole("table", { name: "Recent runs" })).getByText("51"),
+      within(screen.getByRole("table", { name: "Recent runs" })).getByText(
+        "51",
+      ),
     ).toBeTruthy();
     expect(screen.getByText("Coverage Over Time")).toBeTruthy();
     expect(screen.getByText("Coverage %")).toBeTruthy();
@@ -361,18 +370,18 @@ describe("dashboard regression coverage", () => {
     });
     // The tree nests source files under their directory, which aggregates them.
     const directoryRow = within(tree).getByTitle("src").closest("tr");
-    expect(directoryRow?.textContent).toContain("100");
-    expect(directoryRow?.textContent).toContain("82.0%");
+    expect(directoryRow?.textContent).toContain("108");
+    expect(directoryRow?.textContent).toContain("76.9%");
     expect(within(tree).getByTitle("src/fully-covered.ts")).toBeTruthy();
     // The report lists src/partially-covered.ts twice and it renders once,
-    // keeping the first entry's numbers.
+    // with all report entries merged into its displayed metrics.
     expect(within(tree).getAllByTitle("src/partially-covered.ts")).toHaveLength(
       1,
     );
     expect(
       within(tree).getByTitle("src/partially-covered.ts").closest("tr")
         ?.textContent,
-    ).toContain("55.0%");
+    ).toContain("47.9%");
     // The Files stat counts unique files, not report entries.
     const filesStats = screen.getByText("Covered").parentElement;
     expect(filesStats?.textContent?.replace(/\s+/g, "")).toContain("Files2");
@@ -390,25 +399,55 @@ describe("dashboard regression coverage", () => {
 
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText("src/partially-covered.ts")).toBeTruthy();
-    expect(dialog.textContent).toContain("55.0%");
+    expect(dialog.textContent).toContain("47.9%");
 
     // Source comes from the GitHub Contents API at the run's commit, highlighted.
     await waitFor(() =>
       expect(dialog.textContent).toContain("export function neverCovered"),
     );
 
-    const missedLine = dialog.querySelector('[data-state="missed"]');
+    const missedLine = Array.from(
+      dialog.querySelectorAll('[data-state="missed"]'),
+    ).find((line) => line.textContent?.includes("neverCovered"));
     expect(missedLine?.className).toContain("bg-red-500/15");
     expect(missedLine?.querySelector(".token.keyword")?.textContent).toBe(
       "export",
     );
     expect(missedLine?.textContent).toContain("neverCovered");
-    expect(
-      dialog.querySelector('[data-state="partial"]')?.className,
-    ).toContain("bg-amber-500/15");
-    expect(
-      dialog.querySelector('[data-state="covered"]')?.className,
-    ).toContain("bg-emerald-500/15");
+    expect(dialog.querySelector('[data-state="partial"]')?.className).toContain(
+      "bg-amber-500/15",
+    );
+    expect(dialog.querySelector('[data-state="covered"]')?.className).toContain(
+      "bg-emerald-500/15",
+    );
+  });
+
+  it("shows CI paths relative to the repository and loads their source", async () => {
+    const fixture: Fixture = {
+      runId: 54,
+      files: [CI_REPORTED_FILE],
+      sources: { "src/partially-covered.ts": PARTIAL_SOURCE },
+      treePaths: ["src/partially-covered.ts"],
+    };
+    requests.mockImplementation(fixtureResponse(fixture));
+
+    openDashboard();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Load older runs" }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Files" }));
+
+    const tree = await screen.findByRole("table", {
+      name: "File coverage tree",
+    });
+    expect(within(tree).getByTitle("src/partially-covered.ts")).toBeTruthy();
+    expect(within(tree).queryByTitle(CI_REPORTED_PATH)).toBeNull();
+
+    fireEvent.click(within(tree).getByTitle("src/partially-covered.ts"));
+    const dialog = await screen.findByRole("dialog");
+    await waitFor(() =>
+      expect(dialog.textContent).toContain("export function neverCovered"),
+    );
   });
 
   it("resolves a coverage path that omits the source root", async () => {
