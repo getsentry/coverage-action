@@ -29,6 +29,22 @@ function parseDays(value: string | null): number {
   return VALID_DAYS.has(n) ? n : DEFAULT_DAYS;
 }
 
+/**
+ * Coverage reports emit paths the way their tool saw them, including `./` and
+ * `../` prefixes. The `ignore` matcher rejects both, so resolve those segments
+ * against the repository root: `..` clamps at the root and empty results mean
+ * the report's path carried no repository location.
+ */
+function toIgnorePath(path: string): string {
+  const segments: string[] = [];
+  for (const segment of path.replace(/\\/g, "/").split("/")) {
+    if (segment === "" || segment === ".") continue;
+    if (segment === "..") segments.pop();
+    else segments.push(segment);
+  }
+  return segments.join("/");
+}
+
 export default function DashboardPage() {
   const { org, repo } = useParams<{ org: string; repo: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -145,10 +161,13 @@ export default function DashboardPage() {
     if (!gitignoreContent || displayFiles.length === 0) return displayFiles;
     const ig = ignore().add(gitignoreContent);
     return displayFiles.filter((file) => {
-      const path = file.path.replace(/^\/+/, "");
-      return !ig.ignores(path);
+      const path = toIgnorePath(file.path);
+      return path === "" || !ig.ignores(path);
     });
   }, [displayFiles, gitignoreContent]);
+  // Distinguishes an excluded-everything report from one with no per-file data.
+  const allFilesExcluded =
+    displayFiles.length > 0 && filteredFiles.length === 0;
   // Reports without files have nothing to show in the Files tab, so it is hidden.
   const tab = displayFiles.length > 0 ? activeTab : "overview";
 
@@ -461,6 +480,7 @@ export default function DashboardPage() {
 
               <FileCoverageTree
                 files={filteredFiles}
+                allFilesExcluded={allFilesExcluded}
                 onFileSelect={(file) => {
                   setSelectedFile(file);
                   setSourceDialogOpen(true);
