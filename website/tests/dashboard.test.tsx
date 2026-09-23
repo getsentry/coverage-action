@@ -709,6 +709,111 @@ describe("dashboard regression coverage", () => {
     ).toBeTruthy();
   });
 
+  it("excludes files at any depth below a subdirectory .gitignore", async () => {
+    // git semantics: `dist/` in packages/app/.gitignore matches dist/ at ANY
+    // depth under packages/app/, not just packages/app/dist/ itself.
+    const nestedDist = {
+      ...FULLY_COVERED_FILE,
+      name: "output.js",
+      path: "packages/app/e2e/dist/output.js",
+    };
+    const directDist = {
+      ...FULLY_COVERED_FILE,
+      name: "bundle.js",
+      path: "packages/app/dist/bundle.js",
+    };
+    const srcFile = {
+      ...FULLY_COVERED_FILE,
+      name: "index.ts",
+      path: "packages/app/src/index.ts",
+    };
+    const fixture: Fixture = {
+      runId: 60,
+      files: [FULLY_COVERED_FILE, directDist, nestedDist, srcFile],
+      sources: {},
+      treePaths: [
+        "src/fully-covered.ts",
+        "packages/app/dist/bundle.js",
+        "packages/app/e2e/dist/output.js",
+        "packages/app/src/index.ts",
+      ],
+      gitignores: {
+        "packages/app/.gitignore": "dist/\n",
+      },
+    };
+    requests.mockImplementation(fixtureResponse(fixture));
+
+    openDashboard();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Load older runs" }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Files" }));
+
+    const tree = await screen.findByRole("table", {
+      name: "File coverage tree",
+    });
+    expect(within(tree).getByTitle("src/fully-covered.ts")).toBeTruthy();
+    // Both direct and nested dist/ are excluded
+    await waitFor(() =>
+      expect(
+        within(tree).queryByTitle("packages/app/dist/bundle.js"),
+      ).toBeNull(),
+    );
+    expect(
+      within(tree).queryByTitle("packages/app/e2e/dist/output.js"),
+    ).toBeNull();
+    // src/ is still visible
+    expect(
+      within(tree).getByTitle("packages/app/src/index.ts"),
+    ).toBeTruthy();
+  });
+
+  it("excludes basename patterns at any depth below a subdirectory .gitignore", async () => {
+    // `*.log` in packages/app/.gitignore should match packages/app/any/depth/foo.log
+    const deepLog = {
+      ...FULLY_COVERED_FILE,
+      name: "error.log",
+      path: "packages/app/logs/deep/error.log",
+    };
+    const srcFile = {
+      ...FULLY_COVERED_FILE,
+      name: "index.ts",
+      path: "packages/app/src/index.ts",
+    };
+    const fixture: Fixture = {
+      runId: 61,
+      files: [FULLY_COVERED_FILE, deepLog, srcFile],
+      sources: {},
+      treePaths: [
+        "src/fully-covered.ts",
+        "packages/app/logs/deep/error.log",
+        "packages/app/src/index.ts",
+      ],
+      gitignores: {
+        "packages/app/.gitignore": "*.log\n",
+      },
+    };
+    requests.mockImplementation(fixtureResponse(fixture));
+
+    openDashboard();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Load older runs" }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Files" }));
+
+    const tree = await screen.findByRole("table", {
+      name: "File coverage tree",
+    });
+    await waitFor(() =>
+      expect(
+        within(tree).queryByTitle("packages/app/logs/deep/error.log"),
+      ).toBeNull(),
+    );
+    expect(
+      within(tree).getByTitle("packages/app/src/index.ts"),
+    ).toBeTruthy();
+  });
+
   it("shows excluded files when the toggle is clicked", async () => {
     const distFile = {
       ...FULLY_COVERED_FILE,

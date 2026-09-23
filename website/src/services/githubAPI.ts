@@ -65,13 +65,18 @@ function decodeBase64(base64: string): string {
  * Rewrite a .gitignore's rules so they are anchored to the directory that
  * contains the .gitignore file. Root-level rules are returned as-is.
  *
- * For a .gitignore at `packages/foo/.gitignore`:
- *   `dist/`        → `packages/foo/dist/`
- *   `*.log`        → `packages/foo/*.log`
- *   `!keep.log`    → `!packages/foo/keep.log`
- *   `/build/`      → `packages/foo/build/`  (already anchored to its dir)
+ * Git semantics: a pattern with no slash (other than a trailing slash) matches
+ * at any depth below the .gitignore's directory. Such patterns get a `**`
+ * segment inserted so the `ignore` package replicates that behaviour.
+ *
+ * For a .gitignore at packages/foo/.gitignore:
+ *   dist/        -> packages/foo/**\/dist/   (any depth)
+ *   *.log        -> packages/foo/**\/*.log   (any depth)
+ *   src/gen/     -> packages/foo/src/gen/    (anchored: has internal slash)
+ *   /build/      -> packages/foo/build/      (anchored: leading slash)
+ *   !keep.log    -> !packages/foo/**\/keep.log (negation preserved)
  */
-function prefixGitignoreRules(content: string, dir: string): string {
+export function prefixGitignoreRules(content: string, dir: string): string {
   if (!dir) return content;
   return content
     .split("\n")
@@ -81,10 +86,19 @@ function prefixGitignoreRules(content: string, dir: string): string {
       if (!trimmed || trimmed.startsWith("#")) return line;
       // Handle negation prefix
       const negated = trimmed.startsWith("!");
-      const pattern = negated ? trimmed.slice(1) : trimmed;
-      // Strip leading / — it's already relative to the .gitignore's dir
-      const clean = pattern.startsWith("/") ? pattern.slice(1) : pattern;
-      const prefixed = `${dir}/${clean}`;
+      let pattern = negated ? trimmed.slice(1) : trimmed;
+      // Leading / anchors the pattern to the .gitignore's directory
+      const anchored = pattern.startsWith("/");
+      if (anchored) pattern = pattern.slice(1);
+      // Determine if the pattern has an internal slash (anchoring it)
+      // A trailing / alone doesn't anchor — it just marks a directory.
+      const body = pattern.endsWith("/") ? pattern.slice(0, -1) : pattern;
+      const hasInternalSlash = body.includes("/");
+      // Slash-free, unanchored patterns match at any depth below dir
+      const prefixed =
+        !anchored && !hasInternalSlash
+          ? `${dir}/**/${pattern}`
+          : `${dir}/${pattern}`;
       return negated ? `!${prefixed}` : prefixed;
     })
     .join("\n");
@@ -97,6 +111,12 @@ function prefixGitignoreRules(content: string, dir: string): string {
  * every path the viewer opens from that commit.
  */
 const blobPathsByCommit = new Map<string, Map<string, string>>();
+
+/** Cache the full recursive tree per commit so we never fetch it twice. */
+const treeByCommit = new Map<
+  string,
+  { tree: Array<{ path?: string; type?: string }>; truncated: boolean }
+>();
 
 /** Fewer path segments wins; the shorter path breaks ties deterministically. */
 function isShallower(candidate: string, current: string): boolean {
@@ -260,53 +280,39 @@ class GitHubService {
     ref: string,
   ): Promise<string | null> {
     try {
-      // Find every .gitignore in the tree
-      const { data: tree } = await this.octokit.rest.git.getTree({
-        owner,
-        repo,
-        tree_sha: ref,
-        recursive: "1",
-      });
+      const tree = await this.getRepoTree(owner, repo, ref);
+      if (!tree) return null;
+
       const gitignorePaths = tree.tree
         .filter(
-          (entry) =>
+          (entry): entry is typeof entry & { path: string } =>
             entry.type === "blob" &&
-            entry.path?.endsWith(".gitignore") &&
+            typeof entry.path === "string" &&
+            entry.path.endsWith(".gitignore") &&
             entry.path.split("/").pop() === ".gitignore",
         )
         .map((entry) => entry.path);
 
       if (gitignorePaths.length === 0) return null;
 
-      // Fetch each .gitignore and prefix its rules with its directory
-      const sections: string[] = [];
-      for (const path of gitignorePaths) {
-        try {
-          const { data } = await this.octokit.rest.repos.getContent({
-            owner,
-            repo,
-            path,
-            ref,
-          });
-          if (
-            Array.isArray(data) ||
-            data.type !== "file" ||
-            typeof data.content !== "string" ||
-            data.encoding !== "base64"
-          ) {
-            continue;
+      // Fetch each .gitignore in parallel and prefix its rules with its directory
+      const sections = await Promise.all(
+        gitignorePaths.map(async (path) => {
+          try {
+            const file = await this.readFileAt(owner, repo, path, ref);
+            const dir = path.includes("/")
+              ? path.slice(0, path.lastIndexOf("/"))
+              : "";
+            return prefixGitignoreRules(file.content, dir);
+          } catch {
+            // A single unreadable .gitignore doesn't block the rest.
+            return null;
           }
-          const content = decodeBase64(data.content);
-          const dir = path.includes("/")
-            ? path.slice(0, path.lastIndexOf("/"))
-            : "";
-          sections.push(prefixGitignoreRules(content, dir));
-        } catch {
-          // A single unreadable .gitignore doesn't block the rest.
-        }
-      }
+        }),
+      );
 
-      return sections.length > 0 ? sections.join("\n") : null;
+      const combined = sections.filter(Boolean).join("\n");
+      return combined || null;
     } catch (error) {
       // A repository without any .gitignore is expected, not an error.
       if (errorStatus(error) !== 404) {
@@ -353,6 +359,41 @@ class GitHubService {
   }
 
   /**
+   * Fetch the recursive tree for a commit, with a per-commit cache. Warns
+   * when the tree is truncated (>100k entries) since some paths may be
+   * missing from the result.
+   */
+  private async getRepoTree(
+    owner: string,
+    repo: string,
+    ref: string,
+  ): Promise<{ tree: Array<{ path?: string; type?: string }>; truncated: boolean } | null> {
+    const commitKey = `${owner}/${repo}@${ref}`;
+    const cached = treeByCommit.get(commitKey);
+    if (cached) return cached;
+
+    try {
+      const { data } = await this.octokit.rest.git.getTree({
+        owner,
+        repo,
+        tree_sha: ref,
+        recursive: "1",
+      });
+      const result = { tree: data.tree, truncated: data.truncated };
+      if (data.truncated) {
+        console.warn(
+          `Repository tree for ${commitKey} is truncated; some files may be missing`,
+        );
+      }
+      treeByCommit.set(commitKey, result);
+      return result;
+    } catch (error) {
+      console.error("Error fetching repository tree:", error);
+      return null;
+    }
+  }
+
+  /**
    * Find the repository path for a coverage path. Case-insensitive equality
    * first, then a suffix match, because reports regularly omit a source root.
    */
@@ -366,24 +407,15 @@ class GitHubService {
     let blobs = blobPathsByCommit.get(commitKey);
 
     if (!blobs) {
-      try {
-        const { data } = await this.octokit.rest.git.getTree({
-          owner,
-          repo,
-          tree_sha: ref,
-          recursive: "1",
-        });
-        blobs = new Map<string, string>();
-        for (const entry of data.tree) {
-          if (entry.type === "blob") {
-            blobs.set(entry.path.toLowerCase(), entry.path);
-          }
+      const tree = await this.getRepoTree(owner, repo, ref);
+      if (!tree) return null;
+      blobs = new Map<string, string>();
+      for (const entry of tree.tree) {
+        if (entry.type === "blob" && entry.path) {
+          blobs.set(entry.path.toLowerCase(), entry.path);
         }
-        blobPathsByCommit.set(commitKey, blobs);
-      } catch (error) {
-        console.error("Error fetching repository tree:", error);
-        return null;
       }
+      blobPathsByCommit.set(commitKey, blobs);
     }
 
     const wanted = requestedPath.toLowerCase();
