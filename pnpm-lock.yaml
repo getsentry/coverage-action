@@ -138,6 +138,9 @@ importers:
       date-fns:
         specifier: ^4.1.0
         version: 4.1.0
+      ignore:
+        specifier: ^7.0.9
+        version: 7.0.9
       jszip:
         specifier: ^3.10.1
         version: 3.10.1
@@ -2170,6 +2173,10 @@ packages:
 
   ieee754@1.2.1:
     resolution: {integrity: sha512-dcyqhDvX1C46lXZcVqCpK+FtMRQVdIMN6/Df5js2zouUsqG7I6sFxitIC+7KYK29KdXOLHdu9zL4sFnoVQnqaA==}
+
+  ignore@7.0.9:
+    resolution: {integrity: sha512-brTTsvFRt5C1gGHtPst/281UjPD5t9fBqbgoMPlVWy11ZLTPfu7HxK4ZYqO9H7o/yC9rSTCI85EaQ4OoY12qYw==}
+    engines: {node: '>= 4'}
 
   immediate@3.0.6:
     resolution: {integrity: sha512-XXOFtyqDjNDAQxVfYxuF7g9Il/IbWmmlQg2MYKOH8ExIT1qg6xc4zyS3HaEEATgs1btfzxq15ciUiY7gjSXRGQ==}
@@ -5003,6 +5010,8 @@ snapshots:
   husky@9.1.7: {}
 
   ieee754@1.2.1: {}
+
+  ignore@7.0.9: {}
 
   immediate@3.0.6: {}
 

@@ -1,4 +1,5 @@
 import { skipToken, useQuery } from "@tanstack/react-query";
+import ignore from "ignore";
 import { Activity, AlertCircle } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
@@ -26,6 +27,22 @@ function parseDays(value: string | null): number {
   if (!value) return DEFAULT_DAYS;
   const n = Number.parseInt(value, 10);
   return VALID_DAYS.has(n) ? n : DEFAULT_DAYS;
+}
+
+/**
+ * Coverage reports emit paths the way their tool saw them, including `./` and
+ * `../` prefixes. The `ignore` matcher rejects both, so resolve those segments
+ * against the repository root: `..` clamps at the root and empty results mean
+ * the report's path carried no repository location.
+ */
+function toIgnorePath(path: string): string {
+  const segments: string[] = [];
+  for (const segment of path.replace(/\\/g, "/").split("/")) {
+    if (segment === "" || segment === ".") continue;
+    if (segment === "..") segments.pop();
+    else segments.push(segment);
+  }
+  return segments.join("/");
 }
 
 export default function DashboardPage() {
@@ -126,6 +143,31 @@ export default function DashboardPage() {
     () => mergeFiles(latestFiles, repo ?? ""),
     [latestFiles, repo],
   );
+  // The repository's root .gitignore at the displayed commit. A missing file
+  // yields null, so no exclusions are applied.
+  const { data: gitignoreContent } = useQuery<string | null>({
+    queryKey: ["gitignore", org, repo, latestData?.commitSha],
+    queryFn:
+      org && repo && latestData?.commitSha
+        ? () => githubService.getGitignore(org, repo, latestData.commitSha)
+        : skipToken,
+    enabled: !!org && !!repo && !!latestData?.commitSha,
+  });
+  // Coverage tools still report files the repository ignores; keep them out of
+  // the browser tree while the headline totals keep describing the whole report.
+  // The exclusion is a pure derivation over the already-fetched gitignore, so a
+  // future per-view toggle can disable it by returning displayFiles unchanged.
+  const filteredFiles = useMemo(() => {
+    if (!gitignoreContent || displayFiles.length === 0) return displayFiles;
+    const ig = ignore().add(gitignoreContent);
+    return displayFiles.filter((file) => {
+      const path = toIgnorePath(file.path);
+      return path === "" || !ig.ignores(path);
+    });
+  }, [displayFiles, gitignoreContent]);
+  // Distinguishes an excluded-everything report from one with no per-file data.
+  const allFilesExcluded =
+    displayFiles.length > 0 && filteredFiles.length === 0;
   // Reports without files have nothing to show in the Files tab, so it is hidden.
   const tab = displayFiles.length > 0 ? activeTab : "overview";
 
@@ -437,7 +479,8 @@ export default function DashboardPage() {
               </div>
 
               <FileCoverageTree
-                files={displayFiles}
+                files={filteredFiles}
+                allFilesExcluded={allFilesExcluded}
                 onFileSelect={(file) => {
                   setSelectedFile(file);
                   setSourceDialogOpen(true);

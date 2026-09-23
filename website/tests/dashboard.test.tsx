@@ -164,6 +164,8 @@ interface Fixture {
   sources: Record<string, string>;
   /** Blob paths present in the commit's tree. */
   treePaths: string[];
+  /** Root .gitignore served at the run's commit, when the repository has one. */
+  gitignore?: string;
 }
 
 /**
@@ -250,8 +252,15 @@ function fixtureResponse(fixture: Fixture) {
     const requested = decodeURIComponent(url.pathname);
     if (requested.startsWith(contentsPrefix)) {
       const path = requested.slice(contentsPrefix.length);
+      const atCommit = url.searchParams.get("ref") === commit;
       const source =
-        url.searchParams.get("ref") === commit ? fixture.sources[path] : null;
+        path === ".gitignore"
+          ? atCommit
+            ? fixture.gitignore
+            : undefined
+          : atCommit
+            ? fixture.sources[path]
+            : undefined;
       if (source == null) return json({ message: "Not Found" }, 404);
       return json({
         type: "file",
@@ -522,6 +531,127 @@ describe("dashboard regression coverage", () => {
       ),
     );
     expect(dialog.textContent).not.toContain("Could not load source");
+  });
+
+  it("hides files excluded by the repository's .gitignore", async () => {
+    const distFile = {
+      ...FULLY_COVERED_FILE,
+      name: "bundle.js",
+      path: "dist/bundle.js",
+    };
+    const coverageFile = {
+      ...FULLY_COVERED_FILE,
+      name: "index.html",
+      path: "coverage/lcov-report/index.html",
+    };
+    const fixture: Fixture = {
+      runId: 55,
+      files: [FULLY_COVERED_FILE, distFile, coverageFile],
+      sources: {},
+      treePaths: [
+        "src/fully-covered.ts",
+        "dist/bundle.js",
+        "coverage/lcov-report/index.html",
+      ],
+      gitignore: "dist/\ncoverage/\n",
+    };
+    requests.mockImplementation(fixtureResponse(fixture));
+
+    openDashboard();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Load older runs" }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Files" }));
+
+    const tree = await screen.findByRole("table", {
+      name: "File coverage tree",
+    });
+    expect(within(tree).getByTitle("src")).toBeTruthy();
+    expect(within(tree).getByTitle("src/fully-covered.ts")).toBeTruthy();
+    // dist/ and coverage/ are ignored, so neither their directory nor their
+    // files reach the tree once the .gitignore has loaded.
+    await waitFor(() => expect(within(tree).queryByTitle("dist")).toBeNull());
+    expect(within(tree).queryByTitle("dist/bundle.js")).toBeNull();
+    expect(within(tree).queryByTitle("coverage")).toBeNull();
+    expect(
+      within(tree).queryByTitle("coverage/lcov-report/index.html"),
+    ).toBeNull();
+
+    // The headline still reports the unfiltered total from the artifact.
+    const filesStats = screen.getByText("Covered").parentElement;
+    expect(filesStats?.textContent?.replace(/\s+/g, "")).toContain("Files3");
+  });
+
+  it("keeps coverage paths with parent-directory segments from crashing", async () => {
+    const dotDotFile = {
+      ...PARTIALLY_COVERED_FILE,
+      name: "partially-covered.ts",
+      path: "../src/partially-covered.ts",
+    };
+    const fixture: Fixture = {
+      runId: 56,
+      files: [dotDotFile],
+      sources: { "src/partially-covered.ts": PARTIAL_SOURCE },
+      treePaths: ["src/partially-covered.ts"],
+      gitignore: "dist/\n",
+    };
+    requests.mockImplementation(fixtureResponse(fixture));
+
+    openDashboard();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Load older runs" }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Files" }));
+
+    // `ignore` rejects `./` and `../` paths outright, so the report's path is
+    // resolved before matching and the file stays visible.
+    const tree = await screen.findByRole("table", {
+      name: "File coverage tree",
+    });
+    expect(
+      within(tree).getAllByText("partially-covered.ts").length,
+    ).toBeGreaterThan(0);
+    const filesStats = screen.getByText("Covered").parentElement;
+    expect(filesStats?.textContent?.replace(/\s+/g, "")).toContain("Files1");
+  });
+
+  it("explains an empty tree when exclusions hide every file", async () => {
+    const distFile = {
+      ...FULLY_COVERED_FILE,
+      name: "bundle.js",
+      path: "dist/bundle.js",
+    };
+    const coverageFile = {
+      ...FULLY_COVERED_FILE,
+      name: "index.html",
+      path: "coverage/lcov-report/index.html",
+    };
+    const fixture: Fixture = {
+      runId: 57,
+      files: [distFile, coverageFile],
+      sources: {},
+      treePaths: ["dist/bundle.js", "coverage/lcov-report/index.html"],
+      gitignore: "dist/\ncoverage/\n",
+    };
+    requests.mockImplementation(fixtureResponse(fixture));
+
+    openDashboard();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Load older runs" }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Files" }));
+
+    expect(
+      await screen.findByText(
+        "No files are visible with the current exclusions",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("table", { name: "File coverage tree" }),
+    ).toBeNull();
+    // The headline still describes the whole report.
+    const filesStats = screen.getByText("Covered").parentElement;
+    expect(filesStats?.textContent?.replace(/\s+/g, "")).toContain("Files2");
   });
 
   it("clears the previous branch's metrics while the new branch is loading", async () => {

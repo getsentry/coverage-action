@@ -16,6 +16,11 @@ import type { FileCoverage, LineCoverage } from "../types";
 
 interface FileCoverageTreeProps {
   files: FileCoverage[];
+  /**
+   * The report listed files but exclusions removed every one, so the tree is
+   * empty for a reason other than a report without per-file data.
+   */
+  allFilesExcluded?: boolean;
   onFileSelect: (file: FileCoverage) => void;
 }
 
@@ -303,6 +308,7 @@ function SortableHead({
 
 export function FileCoverageTree({
   files,
+  allFilesExcluded = false,
   onFileSelect,
 }: FileCoverageTreeProps) {
   const [query, setQuery] = useState("");
@@ -351,7 +357,9 @@ export function FileCoverageTree({
       {rows.length === 0 ? (
         <div className="flex h-[200px] items-center justify-center text-muted-foreground">
           {files.length === 0
-            ? "No per-file coverage available"
+            ? allFilesExcluded
+              ? "No files are visible with the current exclusions"
+              : "No per-file coverage available"
             : `No files match "${query}"`}
         </div>
       ) : (

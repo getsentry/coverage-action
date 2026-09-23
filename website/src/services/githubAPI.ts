@@ -203,6 +203,41 @@ class GitHubService {
     }
   }
 
+  /**
+   * Fetch the repository root .gitignore at a commit. A missing or unreachable
+   * file means no exclusions are applied, so callers can keep rendering every
+   * report file.
+   */
+  public async getGitignore(
+    owner: string,
+    repo: string,
+    ref: string,
+  ): Promise<string | null> {
+    try {
+      const { data } = await this.octokit.rest.repos.getContent({
+        owner,
+        repo,
+        path: ".gitignore",
+        ref,
+      });
+      if (
+        Array.isArray(data) ||
+        data.type !== "file" ||
+        typeof data.content !== "string" ||
+        data.encoding !== "base64"
+      ) {
+        return null;
+      }
+      return decodeBase64(data.content);
+    } catch (error) {
+      // A repository without a .gitignore is expected, not an error.
+      if (errorStatus(error) !== 404) {
+        console.error("Error fetching .gitignore:", error);
+      }
+      return null;
+    }
+  }
+
   private async readFileAt(
     owner: string,
     repo: string,
