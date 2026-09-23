@@ -39,10 +39,55 @@ export function toRepoRelativePath(path: string, repo: string): string {
     : cleaned.slice(index + marker.length);
 }
 
+/**
+ * Coverage reports emit paths the way their tool saw them, including `./` and
+ * `../` prefixes. The `ignore` matcher rejects both, so resolve those segments
+ * against the repository root: `..` clamps at the root and empty results mean
+ * the report's path carried no repository location.
+ */
+export function toIgnorePath(path: string): string {
+  const segments: string[] = [];
+  for (const segment of path.replace(/\\/g, "/").split("/")) {
+    if (segment === "" || segment === ".") continue;
+    if (segment === "..") segments.pop();
+    else segments.push(segment);
+  }
+  return segments.join("/");
+}
+
 function decodeBase64(base64: string): string {
   const binary = atob(base64.replace(/\s/g, ""));
   const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
   return new TextDecoder().decode(bytes);
+}
+
+/**
+ * Rewrite a .gitignore's rules so they are anchored to the directory that
+ * contains the .gitignore file. Root-level rules are returned as-is.
+ *
+ * For a .gitignore at `packages/foo/.gitignore`:
+ *   `dist/`        → `packages/foo/dist/`
+ *   `*.log`        → `packages/foo/*.log`
+ *   `!keep.log`    → `!packages/foo/keep.log`
+ *   `/build/`      → `packages/foo/build/`  (already anchored to its dir)
+ */
+function prefixGitignoreRules(content: string, dir: string): string {
+  if (!dir) return content;
+  return content
+    .split("\n")
+    .map((line) => {
+      const trimmed = line.trim();
+      // Skip empty lines and comments
+      if (!trimmed || trimmed.startsWith("#")) return line;
+      // Handle negation prefix
+      const negated = trimmed.startsWith("!");
+      const pattern = negated ? trimmed.slice(1) : trimmed;
+      // Strip leading / — it's already relative to the .gitignore's dir
+      const clean = pattern.startsWith("/") ? pattern.slice(1) : pattern;
+      const prefixed = `${dir}/${clean}`;
+      return negated ? `!${prefixed}` : prefixed;
+    })
+    .join("\n");
 }
 
 /**
@@ -204,9 +249,10 @@ class GitHubService {
   }
 
   /**
-   * Fetch the repository root .gitignore at a commit. A missing or unreachable
-   * file means no exclusions are applied, so callers can keep rendering every
-   * report file.
+   * Fetch all .gitignore files in the repository at a commit. Returns the
+   * combined rules with each file's patterns prefixed by its directory, so
+   * subdirectory .gitignore files apply to their own subtree. A missing or
+   * unreachable tree means no exclusions are applied.
    */
   public async getGitignore(
     owner: string,
@@ -214,23 +260,55 @@ class GitHubService {
     ref: string,
   ): Promise<string | null> {
     try {
-      const { data } = await this.octokit.rest.repos.getContent({
+      // Find every .gitignore in the tree
+      const { data: tree } = await this.octokit.rest.git.getTree({
         owner,
         repo,
-        path: ".gitignore",
-        ref,
+        tree_sha: ref,
+        recursive: "1",
       });
-      if (
-        Array.isArray(data) ||
-        data.type !== "file" ||
-        typeof data.content !== "string" ||
-        data.encoding !== "base64"
-      ) {
-        return null;
+      const gitignorePaths = tree.tree
+        .filter(
+          (entry) =>
+            entry.type === "blob" &&
+            entry.path?.endsWith(".gitignore") &&
+            entry.path.split("/").pop() === ".gitignore",
+        )
+        .map((entry) => entry.path);
+
+      if (gitignorePaths.length === 0) return null;
+
+      // Fetch each .gitignore and prefix its rules with its directory
+      const sections: string[] = [];
+      for (const path of gitignorePaths) {
+        try {
+          const { data } = await this.octokit.rest.repos.getContent({
+            owner,
+            repo,
+            path,
+            ref,
+          });
+          if (
+            Array.isArray(data) ||
+            data.type !== "file" ||
+            typeof data.content !== "string" ||
+            data.encoding !== "base64"
+          ) {
+            continue;
+          }
+          const content = decodeBase64(data.content);
+          const dir = path.includes("/")
+            ? path.slice(0, path.lastIndexOf("/"))
+            : "";
+          sections.push(prefixGitignoreRules(content, dir));
+        } catch {
+          // A single unreadable .gitignore doesn't block the rest.
+        }
       }
-      return decodeBase64(data.content);
+
+      return sections.length > 0 ? sections.join("\n") : null;
     } catch (error) {
-      // A repository without a .gitignore is expected, not an error.
+      // A repository without any .gitignore is expected, not an error.
       if (errorStatus(error) !== 404) {
         console.error("Error fetching .gitignore:", error);
       }
