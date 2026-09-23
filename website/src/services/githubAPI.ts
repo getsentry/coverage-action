@@ -39,10 +39,69 @@ export function toRepoRelativePath(path: string, repo: string): string {
     : cleaned.slice(index + marker.length);
 }
 
+/**
+ * Coverage reports emit paths the way their tool saw them, including `./` and
+ * `../` prefixes. The `ignore` matcher rejects both, so resolve those segments
+ * against the repository root: `..` clamps at the root and empty results mean
+ * the report's path carried no repository location.
+ */
+export function toIgnorePath(path: string): string {
+  const segments: string[] = [];
+  for (const segment of path.replace(/\\/g, "/").split("/")) {
+    if (segment === "" || segment === ".") continue;
+    if (segment === "..") segments.pop();
+    else segments.push(segment);
+  }
+  return segments.join("/");
+}
+
 function decodeBase64(base64: string): string {
   const binary = atob(base64.replace(/\s/g, ""));
   const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
   return new TextDecoder().decode(bytes);
+}
+
+/**
+ * Rewrite a .gitignore's rules so they are anchored to the directory that
+ * contains the .gitignore file. Root-level rules are returned as-is.
+ *
+ * Git semantics: a pattern with no slash (other than a trailing slash) matches
+ * at any depth below the .gitignore's directory. Such patterns get a `**`
+ * segment inserted so the `ignore` package replicates that behaviour.
+ *
+ * For a .gitignore at packages/foo/.gitignore:
+ *   dist/        -> packages/foo/**\/dist/   (any depth)
+ *   *.log        -> packages/foo/**\/*.log   (any depth)
+ *   src/gen/     -> packages/foo/src/gen/    (anchored: has internal slash)
+ *   /build/      -> packages/foo/build/      (anchored: leading slash)
+ *   !keep.log    -> !packages/foo/**\/keep.log (negation preserved)
+ */
+export function prefixGitignoreRules(content: string, dir: string): string {
+  if (!dir) return content;
+  return content
+    .split("\n")
+    .map((line) => {
+      const trimmed = line.trim();
+      // Skip empty lines and comments
+      if (!trimmed || trimmed.startsWith("#")) return line;
+      // Handle negation prefix
+      const negated = trimmed.startsWith("!");
+      let pattern = negated ? trimmed.slice(1) : trimmed;
+      // Leading / anchors the pattern to the .gitignore's directory
+      const anchored = pattern.startsWith("/");
+      if (anchored) pattern = pattern.slice(1);
+      // Determine if the pattern has an internal slash (anchoring it)
+      // A trailing / alone doesn't anchor — it just marks a directory.
+      const body = pattern.endsWith("/") ? pattern.slice(0, -1) : pattern;
+      const hasInternalSlash = body.includes("/");
+      // Slash-free, unanchored patterns match at any depth below dir
+      const prefixed =
+        !anchored && !hasInternalSlash
+          ? `${dir}/**/${pattern}`
+          : `${dir}/${pattern}`;
+      return negated ? `!${prefixed}` : prefixed;
+    })
+    .join("\n");
 }
 
 /**
@@ -52,6 +111,12 @@ function decodeBase64(base64: string): string {
  * every path the viewer opens from that commit.
  */
 const blobPathsByCommit = new Map<string, Map<string, string>>();
+
+/** Cache the full recursive tree per commit so we never fetch it twice. */
+const treeByCommit = new Map<
+  string,
+  { tree: Array<{ path?: string; type?: string }>; truncated: boolean }
+>();
 
 /** Fewer path segments wins; the shorter path breaks ties deterministically. */
 function isShallower(candidate: string, current: string): boolean {
@@ -204,9 +269,10 @@ class GitHubService {
   }
 
   /**
-   * Fetch the repository root .gitignore at a commit. A missing or unreachable
-   * file means no exclusions are applied, so callers can keep rendering every
-   * report file.
+   * Fetch all .gitignore files in the repository at a commit. Returns the
+   * combined rules with each file's patterns prefixed by its directory, so
+   * subdirectory .gitignore files apply to their own subtree. A missing or
+   * unreachable tree means no exclusions are applied.
    */
   public async getGitignore(
     owner: string,
@@ -214,23 +280,41 @@ class GitHubService {
     ref: string,
   ): Promise<string | null> {
     try {
-      const { data } = await this.octokit.rest.repos.getContent({
-        owner,
-        repo,
-        path: ".gitignore",
-        ref,
-      });
-      if (
-        Array.isArray(data) ||
-        data.type !== "file" ||
-        typeof data.content !== "string" ||
-        data.encoding !== "base64"
-      ) {
-        return null;
-      }
-      return decodeBase64(data.content);
+      const tree = await this.getRepoTree(owner, repo, ref);
+      if (!tree) return null;
+
+      const gitignorePaths = tree.tree
+        .filter(
+          (entry): entry is typeof entry & { path: string } =>
+            entry.type === "blob" &&
+            typeof entry.path === "string" &&
+            entry.path.endsWith(".gitignore") &&
+            entry.path.split("/").pop() === ".gitignore",
+        )
+        .map((entry) => entry.path);
+
+      if (gitignorePaths.length === 0) return null;
+
+      // Fetch each .gitignore in parallel and prefix its rules with its directory
+      const sections = await Promise.all(
+        gitignorePaths.map(async (path) => {
+          try {
+            const file = await this.readFileAt(owner, repo, path, ref);
+            const dir = path.includes("/")
+              ? path.slice(0, path.lastIndexOf("/"))
+              : "";
+            return prefixGitignoreRules(file.content, dir);
+          } catch {
+            // A single unreadable .gitignore doesn't block the rest.
+            return null;
+          }
+        }),
+      );
+
+      const combined = sections.filter(Boolean).join("\n");
+      return combined || null;
     } catch (error) {
-      // A repository without a .gitignore is expected, not an error.
+      // A repository without any .gitignore is expected, not an error.
       if (errorStatus(error) !== 404) {
         console.error("Error fetching .gitignore:", error);
       }
@@ -275,6 +359,41 @@ class GitHubService {
   }
 
   /**
+   * Fetch the recursive tree for a commit, with a per-commit cache. Warns
+   * when the tree is truncated (>100k entries) since some paths may be
+   * missing from the result.
+   */
+  private async getRepoTree(
+    owner: string,
+    repo: string,
+    ref: string,
+  ): Promise<{ tree: Array<{ path?: string; type?: string }>; truncated: boolean } | null> {
+    const commitKey = `${owner}/${repo}@${ref}`;
+    const cached = treeByCommit.get(commitKey);
+    if (cached) return cached;
+
+    try {
+      const { data } = await this.octokit.rest.git.getTree({
+        owner,
+        repo,
+        tree_sha: ref,
+        recursive: "1",
+      });
+      const result = { tree: data.tree, truncated: data.truncated };
+      if (data.truncated) {
+        console.warn(
+          `Repository tree for ${commitKey} is truncated; some files may be missing`,
+        );
+      }
+      treeByCommit.set(commitKey, result);
+      return result;
+    } catch (error) {
+      console.error("Error fetching repository tree:", error);
+      return null;
+    }
+  }
+
+  /**
    * Find the repository path for a coverage path. Case-insensitive equality
    * first, then a suffix match, because reports regularly omit a source root.
    */
@@ -288,24 +407,15 @@ class GitHubService {
     let blobs = blobPathsByCommit.get(commitKey);
 
     if (!blobs) {
-      try {
-        const { data } = await this.octokit.rest.git.getTree({
-          owner,
-          repo,
-          tree_sha: ref,
-          recursive: "1",
-        });
-        blobs = new Map<string, string>();
-        for (const entry of data.tree) {
-          if (entry.type === "blob") {
-            blobs.set(entry.path.toLowerCase(), entry.path);
-          }
+      const tree = await this.getRepoTree(owner, repo, ref);
+      if (!tree) return null;
+      blobs = new Map<string, string>();
+      for (const entry of tree.tree) {
+        if (entry.type === "blob" && entry.path) {
+          blobs.set(entry.path.toLowerCase(), entry.path);
         }
-        blobPathsByCommit.set(commitKey, blobs);
-      } catch (error) {
-        console.error("Error fetching repository tree:", error);
-        return null;
       }
+      blobPathsByCommit.set(commitKey, blobs);
     }
 
     const wanted = requestedPath.toLowerCase();

@@ -1,7 +1,7 @@
 import { skipToken, useQuery } from "@tanstack/react-query";
 import ignore from "ignore";
-import { Activity, AlertCircle } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { Activity, AlertCircle, Eye, EyeOff } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,7 @@ import { TestResultsChart } from "../components/TestResultsChart";
 import { TimeRangeFilter } from "../components/TimeRangeFilter";
 import { useArtifacts } from "../hooks/useArtifacts";
 import { useBranches } from "../hooks/useBranches";
-import { githubService, type RepoInfo } from "../services/githubAPI";
+import { githubService, toIgnorePath, type RepoInfo } from "../services/githubAPI";
 import type { FileCoverage } from "../types";
 
 const VALID_DAYS = new Set([7, 30, 90, 365]);
@@ -27,22 +27,6 @@ function parseDays(value: string | null): number {
   if (!value) return DEFAULT_DAYS;
   const n = Number.parseInt(value, 10);
   return VALID_DAYS.has(n) ? n : DEFAULT_DAYS;
-}
-
-/**
- * Coverage reports emit paths the way their tool saw them, including `./` and
- * `../` prefixes. The `ignore` matcher rejects both, so resolve those segments
- * against the repository root: `..` clamps at the root and empty results mean
- * the report's path carried no repository location.
- */
-function toIgnorePath(path: string): string {
-  const segments: string[] = [];
-  for (const segment of path.replace(/\\/g, "/").split("/")) {
-    if (segment === "" || segment === ".") continue;
-    if (segment === "..") segments.pop();
-    else segments.push(segment);
-  }
-  return segments.join("/");
 }
 
 export default function DashboardPage() {
@@ -134,6 +118,7 @@ export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<"overview" | "files">("overview");
   const [selectedFile, setSelectedFile] = useState<FileCoverage | null>(null);
   const [sourceDialogOpen, setSourceDialogOpen] = useState(false);
+  const [showExcluded, setShowExcluded] = useState(false);
 
   // Artifacts written before per-file coverage report no files at all.
   const latestFiles = latestData?.coverage?.files ?? [];
@@ -143,7 +128,7 @@ export default function DashboardPage() {
     () => mergeFiles(latestFiles, repo ?? ""),
     [latestFiles, repo],
   );
-  // The repository's root .gitignore at the displayed commit. A missing file
+  // The repository's .gitignore files at the displayed commit. A missing tree
   // yields null, so no exclusions are applied.
   const { data: gitignoreContent } = useQuery<string | null>({
     queryKey: ["gitignore", org, repo, latestData?.commitSha],
@@ -153,11 +138,16 @@ export default function DashboardPage() {
         : skipToken,
     enabled: !!org && !!repo && !!latestData?.commitSha,
   });
+
+  // Reset the show-excluded toggle when switching to a different commit.
+  const commitSha = latestData?.commitSha;
+  useEffect(() => {
+    setShowExcluded(false);
+  }, [commitSha]);
+
   // Coverage tools still report files the repository ignores; keep them out of
   // the browser tree while the headline totals keep describing the whole report.
-  // The exclusion is a pure derivation over the already-fetched gitignore, so a
-  // future per-view toggle can disable it by returning displayFiles unchanged.
-  const filteredFiles = useMemo(() => {
+  const excludedFiles = useMemo(() => {
     if (!gitignoreContent || displayFiles.length === 0) return displayFiles;
     const ig = ignore().add(gitignoreContent);
     return displayFiles.filter((file) => {
@@ -165,6 +155,8 @@ export default function DashboardPage() {
       return path === "" || !ig.ignores(path);
     });
   }, [displayFiles, gitignoreContent]);
+  const hasExcludedFiles = excludedFiles.length < displayFiles.length;
+  const filteredFiles = showExcluded ? displayFiles : excludedFiles;
   // Distinguishes an excluded-everything report from one with no per-file data.
   const allFilesExcluded =
     displayFiles.length > 0 && filteredFiles.length === 0;
@@ -477,6 +469,25 @@ export default function DashboardPage() {
                   </span>
                 </div>
               </div>
+
+              {hasExcludedFiles && (
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowExcluded((v) => !v)}
+                  >
+                    {showExcluded ? (
+                      <EyeOff className="mr-2 h-3.5 w-3.5" />
+                    ) : (
+                      <Eye className="mr-2 h-3.5 w-3.5" />
+                    )}
+                    {showExcluded
+                      ? "Hide excluded files"
+                      : `Show ${displayFiles.length - excludedFiles.length} excluded files`}
+                  </Button>
+                </div>
+              )}
 
               <FileCoverageTree
                 files={filteredFiles}
