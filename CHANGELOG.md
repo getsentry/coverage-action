@@ -1,3 +1,21 @@
+## 0.4.2
+
+### New Features ✨
+
+#### Website
+
+- Harden gitignore exclusions by @MathurAditya724 in [#116](https://github.com/getsentry/coverage-action/pull/116)
+- Respect gitignore exclusions by @aldy505 in [#114](https://github.com/getsentry/coverage-action/pull/114)
+- Coverage file browser by @aldy505 in [#112](https://github.com/getsentry/coverage-action/pull/112)
+
+### Bug Fixes 🐛
+
+- (dashboard) Correct merged file coverage by @MathurAditya724 in [#113](https://github.com/getsentry/coverage-action/pull/113)
+
+### Internal Changes 🔧
+
+- Cleanup unwanted tar.gz file by @aldy505 in [#115](https://github.com/getsentry/coverage-action/pull/115)
+
 ## 0.4.1
 
 ### Bug Fixes 🐛
