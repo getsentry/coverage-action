@@ -20,6 +20,7 @@ export interface ReportFormatOptions {
   patchTarget?: number;
   patchFileBreakdown?: PatchFileCoverage[];
   githubContext?: GitHubContext;
+  title?: string;
 }
 
 export class ReportFormatter {
@@ -34,7 +35,7 @@ export class ReportFormatter {
     const lines: string[] = [];
 
     // Main header
-    lines.push("## Coverage Results 📊");
+    lines.push(`## ${options.title ?? "Coverage Results 📊"}`);
     lines.push("");
 
     // Add test results section
