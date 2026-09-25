@@ -183,6 +183,7 @@ async function run() {
     const enableCoverage = core.getBooleanInput("enable-coverage") !== false;
     const postPrComment = core.getBooleanInput("post-pr-comment") === true;
     const commentKey = core.getInput("comment-key") || undefined;
+    const title = core.getInput("title") || undefined;
 
     // Get coverage config
     const coverageConfig = await getCoverageConfig();
@@ -425,6 +426,7 @@ async function run() {
         patchTarget: patchTargetForFormatter,
         patchFileBreakdown: patchCoverage?.fileBreakdown,
         githubContext,
+        title,
       };
 
     const summaryReportBody = formatter.formatReport(

@@ -36360,7 +36360,7 @@ class ReportFormatter {
     formatReport(testResults, coverageResults, options = {}) {
         const lines = [];
         // Main header
-        lines.push("## Coverage Results 📊");
+        lines.push(`## ${options.title ?? "Coverage Results 📊"}`);
         lines.push("");
         // Add test results section
         if (testResults) {
@@ -146063,6 +146063,7 @@ async function run() {
         const enableCoverage = getBooleanInput("enable-coverage") !== false;
         const postPrComment = getBooleanInput("post-pr-comment") === true;
         const commentKey = getInput("comment-key") || undefined;
+        const title = getInput("title") || undefined;
         // Get coverage config
         const coverageConfig = await getCoverageConfig();
         if (!token) {
@@ -146222,6 +146223,7 @@ async function run() {
             patchTarget: patchTargetForFormatter,
             patchFileBreakdown: patchCoverage?.fileBreakdown,
             githubContext,
+            title,
         };
         const summaryReportBody = formatter.formatReport(aggregatedTestResults || undefined, aggregatedCoverageResults || undefined, reportOptions);
         // Write Job Summary (always)

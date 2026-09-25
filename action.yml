@@ -80,6 +80,10 @@ inputs:
     description: Unique key to namespace this step's PR comment. Set a different key per step to post separate comments.
     required: false
     default: ""
+  title:
+    description: Heading of the PR comment and Job Summary. Defaults to "Coverage Results 📊".
+    required: false
+    default: ""
 
   # Threshold enforcement
   fail-on-error:
