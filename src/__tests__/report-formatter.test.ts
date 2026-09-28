@@ -194,6 +194,22 @@ describe("ReportFormatter", () => {
     );
   });
 
+  it("uses the default heading when no title is provided", () => {
+    const [heading] = formatter.formatReport().split("\n");
+
+    expect(heading).toBe("## Coverage Results 📊");
+  });
+
+  it("uses the title as the heading when provided", () => {
+    const [heading] = formatter
+      .formatReport(undefined, undefined, {
+        title: "Frontend Coverage Results",
+      })
+      .split("\n");
+
+    expect(heading).toBe("## Frontend Coverage Results");
+  });
+
   it("should handle tests with no stack trace", () => {
     const results: AggregatedTestResults = {
       totalTests: 1,
