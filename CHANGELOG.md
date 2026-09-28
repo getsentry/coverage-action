@@ -1,3 +1,9 @@
+## 0.4.3
+
+### New Features ✨
+
+- (comment) Add title input by @GabeDuarteM in [#117](https://github.com/getsentry/coverage-action/pull/117)
+
 ## 0.4.2
 
 ### New Features ✨
