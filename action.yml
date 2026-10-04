@@ -84,10 +84,6 @@ inputs:
     description: Heading of the PR comment and Job Summary. Defaults to "Coverage Results 📊".
     required: false
     default: ""
-  status-key:
-    description: Unique key to namespace this step's commit statuses, reported as e.g. `codecov/project (<key>)`. Set a different key per step to report separate statuses.
-    required: false
-    default: ""
 
   # Threshold enforcement
   fail-on-error:
@@ -109,6 +105,10 @@ inputs:
   informational-patch:
     description: "When true, patch status check always reports success (advisory mode). Overrides config file."
     required: false
+  status-key:
+    description: Unique key to namespace this step's commit statuses, reported as e.g. `codecov/project (<key>)`. Set a different key per step to report separate statuses; setting one renames both statuses.
+    required: false
+    default: ""
 
   # Legacy input (deprecated, use 'files' or 'directory' instead)
   coverage-xml-pattern:

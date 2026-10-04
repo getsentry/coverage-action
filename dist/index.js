@@ -57620,9 +57620,9 @@ class StatusReporter {
      * Report status check to GitHub
      */
     async reportStatus(context, state, description, targetUrl) {
-        if (this.statusKey) {
-            context = `${context} (${this.statusKey})`;
-        }
+        const reportedContext = this.statusKey
+            ? `${context} (${this.statusKey})`
+            : context;
         try {
             // Use the exposed octokit instance and context info from GitHubClient
             // We need to access private properties or extend GitHubClient to support this.
@@ -57630,11 +57630,11 @@ class StatusReporter {
             // we'll rely on a new method we'll need to add to GitHubClient, or use the existing patterns.
             // Checking GitHubClient implementation first...
             // It seems we need to extend GitHubClient to support createCommitStatus
-            await this.client.createCommitStatus(context, state, description, targetUrl);
-            info(`✅ Reported status '${context}': ${state} - ${description}`);
+            await this.client.createCommitStatus(reportedContext, state, description, targetUrl);
+            info(`✅ Reported status '${reportedContext}': ${state} - ${description}`);
         }
         catch (error) {
-            warning(`Failed to report status '${context}': ${error instanceof Error ? error.message : String(error)}`);
+            warning(`Failed to report status '${reportedContext}': ${error instanceof Error ? error.message : String(error)}`);
         }
     }
 }

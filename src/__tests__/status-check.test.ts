@@ -61,24 +61,12 @@ describe("StatusReporter.reportStatus", () => {
     );
   });
 
-  it("steps with different keys report separate statuses", async () => {
-    await new StatusReporter("token", "frontend").reportStatus(
-      "codecov/patch",
-      "success",
-      "desc",
-    );
-    await new StatusReporter("token", "backend").reportStatus(
-      "codecov/patch",
-      "failure",
-      "desc",
-    );
+  it("with an empty status-key: reports the plain context", async () => {
+    const reporter = new StatusReporter("token", "");
+    await reporter.reportStatus("codecov/patch", "success", "desc");
 
-    const contexts = createCommitStatus.mock.calls.map(
-      ([params]) => params.context,
+    expect(createCommitStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ context: "codecov/patch" }),
     );
-    expect(contexts).toEqual([
-      "codecov/patch (frontend)",
-      "codecov/patch (backend)",
-    ]);
   });
 });

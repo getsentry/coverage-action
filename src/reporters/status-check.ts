@@ -24,9 +24,9 @@ export class StatusReporter {
     description: string,
     targetUrl?: string,
   ): Promise<void> {
-    if (this.statusKey) {
-      context = `${context} (${this.statusKey})`;
-    }
+    const reportedContext = this.statusKey
+      ? `${context} (${this.statusKey})`
+      : context;
 
     try {
       // Use the exposed octokit instance and context info from GitHubClient
@@ -37,16 +37,18 @@ export class StatusReporter {
       // Checking GitHubClient implementation first...
       // It seems we need to extend GitHubClient to support createCommitStatus
       await this.client.createCommitStatus(
-        context,
+        reportedContext,
         state,
         description,
         targetUrl,
       );
 
-      core.info(`✅ Reported status '${context}': ${state} - ${description}`);
+      core.info(
+        `✅ Reported status '${reportedContext}': ${state} - ${description}`,
+      );
     } catch (error) {
       core.warning(
-        `Failed to report status '${context}': ${
+        `Failed to report status '${reportedContext}': ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
