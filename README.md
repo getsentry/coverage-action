@@ -54,6 +54,7 @@ jobs:
 | `post-pr-comment` | Post results as a PR comment | No | `false` |
 | `comment-key` | Namespace the PR comment per step so steps sharing this action post separate comments instead of overwriting each other | No | — |
 | `title` | Heading of the PR comment and Job Summary | No | `Coverage Results 📊` |
+| `status-key` | Namespace the commit statuses per step, as `codecov/project (<key>)` and `codecov/patch (<key>)`, so steps sharing this action report separate statuses instead of overwriting each other | No | — |
 
 ### Coverage File Discovery (Codecov-style)
 
@@ -335,6 +336,8 @@ The action creates GitHub commit status checks that appear on commits and PRs:
 |----------------|-------------|
 | `codecov/project` | Overall project coverage status (pass/fail based on target) |
 | `codecov/patch` | Coverage for changed lines in the PR |
+
+When several steps report coverage on the same commit, for example one per package in a monorepo, give each a `status-key`. The statuses become `codecov/project (<key>)` and `codecov/patch (<key>)`, so each step keeps its own pair and a branch protection rule can require one package's status.
 
 These status checks:
 - Show as green checkmarks or red X marks on commits and PRs

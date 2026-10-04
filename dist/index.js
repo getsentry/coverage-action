@@ -57595,19 +57595,34 @@ class GitHubClient {
 }
 
 class StatusReporter {
-    constructor(token) {
+    /**
+     * @param statusKey Optional key appended to every status context, e.g.
+     *   `codecov/patch (frontend)`. Steps that share this action and report on
+     *   the same commit need distinct keys, or each overwrites the other's status.
+     */
+    constructor(token, statusKey) {
         Object.defineProperty(this, "client", {
             enumerable: true,
             configurable: true,
             writable: true,
             value: void 0
         });
+        Object.defineProperty(this, "statusKey", {
+            enumerable: true,
+            configurable: true,
+            writable: true,
+            value: void 0
+        });
         this.client = new GitHubClient(token);
+        this.statusKey = statusKey;
     }
     /**
      * Report status check to GitHub
      */
     async reportStatus(context, state, description, targetUrl) {
+        if (this.statusKey) {
+            context = `${context} (${this.statusKey})`;
+        }
         try {
             // Use the exposed octokit instance and context info from GitHubClient
             // We need to access private properties or extend GitHubClient to support this.
@@ -146064,6 +146079,7 @@ async function run() {
         const postPrComment = getBooleanInput("post-pr-comment") === true;
         const commentKey = getInput("comment-key") || undefined;
         const title = getInput("title") || undefined;
+        const statusKey = getInput("status-key") || undefined;
         // Get coverage config
         const coverageConfig = await getCoverageConfig();
         if (!token) {
@@ -146109,7 +146125,7 @@ async function run() {
             // Run threshold checks if coverage results are available
             if (aggregatedCoverageResults) {
                 // Initialize status reporter
-                const statusReporter = new StatusReporter(token);
+                const statusReporter = new StatusReporter(token, statusKey);
                 // Calculate patch coverage if in PR context
                 if (githubClient.isPullRequest()) {
                     try {

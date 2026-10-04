@@ -84,6 +84,10 @@ inputs:
     description: Heading of the PR comment and Job Summary. Defaults to "Coverage Results 📊".
     required: false
     default: ""
+  status-key:
+    description: Unique key to namespace this step's commit statuses, reported as e.g. `codecov/project (<key>)`. Set a different key per step to report separate statuses.
+    required: false
+    default: ""
 
   # Threshold enforcement
   fail-on-error:
