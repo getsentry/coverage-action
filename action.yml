@@ -105,6 +105,10 @@ inputs:
   informational-patch:
     description: "When true, patch status check always reports success (advisory mode). Overrides config file."
     required: false
+  status-key:
+    description: Unique key to namespace this step's commit statuses, reported as e.g. `codecov/project (<key>)`. Set a different key per step to report separate statuses; setting one renames both statuses.
+    required: false
+    default: ""
 
   # Legacy input (deprecated, use 'files' or 'directory' instead)
   coverage-xml-pattern:

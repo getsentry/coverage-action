@@ -184,6 +184,7 @@ async function run() {
     const postPrComment = core.getBooleanInput("post-pr-comment") === true;
     const commentKey = core.getInput("comment-key") || undefined;
     const title = core.getInput("title") || undefined;
+    const statusKey = core.getInput("status-key") || undefined;
 
     // Get coverage config
     const coverageConfig = await getCoverageConfig();
@@ -260,7 +261,7 @@ async function run() {
       // Run threshold checks if coverage results are available
       if (aggregatedCoverageResults) {
         // Initialize status reporter
-        const statusReporter = new StatusReporter(token);
+        const statusReporter = new StatusReporter(token, statusKey);
 
         // Calculate patch coverage if in PR context
         if (githubClient.isPullRequest()) {
