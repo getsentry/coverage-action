@@ -69,4 +69,36 @@ describe("StatusReporter.reportStatus", () => {
       expect.objectContaining({ context: "codecov/patch" }),
     );
   });
+
+  it.each([
+    [
+      "codecov/project",
+      "codecov/project (frontend)",
+      "codecov/project (backend)",
+    ],
+    ["codecov/patch", "codecov/patch (frontend)", "codecov/patch (backend)"],
+  ])("keeps a failed package separate from a passing package for %s", async (context, frontendContext, backendContext) => {
+    const frontend = new StatusReporter("token", "frontend");
+    const backend = new StatusReporter("token", "backend");
+
+    await frontend.reportStatus(context, "failure", "Below target");
+    await backend.reportStatus(context, "success", "Target met");
+
+    expect(createCommitStatus).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        sha: "abcdef0123456789",
+        context: frontendContext,
+        state: "failure",
+      }),
+    );
+    expect(createCommitStatus).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        sha: "abcdef0123456789",
+        context: backendContext,
+        state: "success",
+      }),
+    );
+  });
 });

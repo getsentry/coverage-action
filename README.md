@@ -225,9 +225,11 @@ When thresholds are not configured, status checks report coverage metrics withou
 
 ### Monorepo with Flags
 
+These monorepo and matrix examples pin a commit that supports `status-key`, which is not included in releases through `0.4.3`.
+
 ```yaml
 - name: Frontend Coverage
-  uses: getsentry/coverage-action@0.3.8
+  uses: getsentry/coverage-action@69d8a426d282aba2ed4e6b2d78c6a9782f81b6fb
   with:
     token: ${{ secrets.GITHUB_TOKEN }}
     directory: ./frontend/coverage
@@ -236,7 +238,7 @@ When thresholds are not configured, status checks report coverage metrics withou
     status-key: frontend
 
 - name: Backend Coverage
-  uses: getsentry/coverage-action@0.3.8
+  uses: getsentry/coverage-action@69d8a426d282aba2ed4e6b2d78c6a9782f81b6fb
   with:
     token: ${{ secrets.GITHUB_TOKEN }}
     directory: ./backend/coverage
@@ -267,7 +269,7 @@ jobs:
         run: pytest --cov=src --cov-report=xml
 
       - name: Coverage Action
-        uses: getsentry/coverage-action@0.3.8
+        uses: getsentry/coverage-action@69d8a426d282aba2ed4e6b2d78c6a9782f81b6fb
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           files: coverage.xml
@@ -346,6 +348,8 @@ These status checks:
 - Provide immediate feedback on coverage quality
 
 When several steps report coverage on the same commit, for example one per package in a monorepo, give each a `status-key`. The statuses become `codecov/project (<key>)` and `codecov/patch (<key>)`, so each step keeps its own pair and a branch protection rule can require one package's status. Setting a key renames both statuses, so update any branch protection rule that requires the unkeyed names.
+
+GitHub treats status contexts as case-insensitive, so keys such as `frontend` and `Frontend` still overwrite each other's statuses. Keep each key stable across runs and distinct ignoring case. Use `name` to identify artifacts and `comment-key` to separate PR comments; `status-key` only separates commit statuses.
 
 ## Status Badges
 
