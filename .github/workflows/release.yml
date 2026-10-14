@@ -13,6 +13,7 @@ on:
       merge_target:
         description: Merge target branch
         required: false
+        default: main
 
 permissions:
   contents: write
