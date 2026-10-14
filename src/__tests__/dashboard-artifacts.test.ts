@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchArtifacts } from "../../website/src/hooks/useArtifacts";
 import { githubService } from "../../website/src/services/githubAPI";
 
@@ -30,7 +30,14 @@ const artifact = {
   expired: false,
 };
 
-beforeEach(() => vi.restoreAllMocks());
+beforeEach(() => {
+  vi.restoreAllMocks();
+  // Keep fixture timestamps within the cutoff captured by fetchArtifacts.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime("2026-10-14T12:00:00Z");
+});
+
+afterEach(() => vi.useRealTimers());
 
 describe("dashboard artifact loading", () => {
   it("makes older pages reachable when the first page has no artifacts", async () => {
