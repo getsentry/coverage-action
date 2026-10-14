@@ -81,6 +81,7 @@ jobs:
 | `threshold-project` | Allowed project coverage drop % (only used when target is `auto`) | No | — |
 | `target-patch` | Target patch coverage % for changed lines | No | `80` |
 | `fail-on-error` | Fail CI if coverage thresholds are not met (distinct from `fail-ci-if-error`) | No | `false` |
+| `status-key` | Namespace the commit statuses per step, as `codecov/project (<key>)` and `codecov/patch (<key>)`, so steps sharing this action report separate statuses instead of overwriting each other | No | — |
 
 When thresholds are not configured, status checks report coverage metrics without enforcing pass/fail.
 
@@ -232,6 +233,7 @@ When thresholds are not configured, status checks report coverage metrics withou
     directory: ./frontend/coverage
     flags: frontend
     name: frontend-coverage
+    status-key: frontend
 
 - name: Backend Coverage
   uses: getsentry/coverage-action@0.3.8
@@ -240,11 +242,12 @@ When thresholds are not configured, status checks report coverage metrics withou
     directory: ./backend/coverage
     flags: backend
     name: backend-coverage
+    status-key: backend
 ```
 
 ### Matrix Builds
 
-When running coverage in a matrix strategy (e.g., multiple Python versions), use the `name` input to give each matrix entry a unique artifact name and avoid upload conflicts:
+When running coverage in a matrix strategy (e.g., multiple Python versions), use the `name` input to give each matrix entry a unique artifact name and avoid upload conflicts, and `status-key` to give each entry its own status checks:
 
 ```yaml
 jobs:
@@ -269,6 +272,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           files: coverage.xml
           name: py${{ matrix.python-version }}
+          status-key: py${{ matrix.python-version }}
 ```
 
 ### Coverage Thresholds with Status Checks
@@ -340,6 +344,8 @@ These status checks:
 - Show as green checkmarks or red X marks on commits and PRs
 - Can be used in **branch protection rules** to require coverage thresholds
 - Provide immediate feedback on coverage quality
+
+When several steps report coverage on the same commit, for example one per package in a monorepo, give each a `status-key`. The statuses become `codecov/project (<key>)` and `codecov/patch (<key>)`, so each step keeps its own pair and a branch protection rule can require one package's status. Setting a key renames both statuses, so update any branch protection rule that requires the unkeyed names.
 
 ## Status Badges
 
