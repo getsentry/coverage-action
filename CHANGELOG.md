@@ -1,3 +1,15 @@
+## 0.4.4
+
+### New Features ✨
+
+- (status) Add status-key input to namespace commit statuses by @tyrantkhan in [#118](https://github.com/getsentry/coverage-action/pull/118)
+
+### Internal Changes 🔧
+
+- (dashboard) Freeze the artifact fixture clock by @MathurAditya724 in [#120](https://github.com/getsentry/coverage-action/pull/120)
+- (release) Default the merge target to main by @MathurAditya724 in [#121](https://github.com/getsentry/coverage-action/pull/121)
+- (status) Document and verify independent package statuses by @MathurAditya724 in [#119](https://github.com/getsentry/coverage-action/pull/119)
+
 ## 0.4.3
 
 ### New Features ✨
