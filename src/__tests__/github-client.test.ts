@@ -19,6 +19,10 @@ const pullsGet = vi.fn();
 
 vi.mock("@actions/github", () => ({
   getOctokit: () => ({
+    paginate: (
+      fn: (params: unknown) => Promise<{ data: unknown[] }>,
+      params: unknown,
+    ) => fn(params).then((r) => r.data),
     rest: {
       issues: { listComments, updateComment, createComment },
       repos: { createCommitStatus, getCommit, compareCommitsWithBasehead },
@@ -87,6 +91,27 @@ describe("GitHubClient.postOrUpdateComment", () => {
 
     expect(updateComment).toHaveBeenCalledWith(
       expect.objectContaining({ comment_id: 42 }),
+    );
+    expect(createComment).not.toHaveBeenCalled();
+  });
+
+  it("finds the existing comment beyond the first page", async () => {
+    const identifier = ReportFormatter.getCommentIdentifier();
+    const others = Array.from({ length: 30 }, (_, i) => ({
+      id: i,
+      body: "noise",
+    }));
+    listComments.mockResolvedValue({
+      data: [...others, { id: 77, body: `${identifier}\nold content` }],
+    });
+
+    await client.postOrUpdateComment("new content");
+
+    expect(listComments).toHaveBeenCalledWith(
+      expect.objectContaining({ per_page: 100 }),
+    );
+    expect(updateComment).toHaveBeenCalledWith(
+      expect.objectContaining({ comment_id: 77 }),
     );
     expect(createComment).not.toHaveBeenCalled();
   });
