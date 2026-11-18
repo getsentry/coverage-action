@@ -57606,12 +57606,8 @@ class GitHubClient {
         const { owner, repo } = this.context.repo;
         const identifier = ReportFormatter.getCommentIdentifier(commentKey);
         try {
-            // Find existing comment
-            const { data: comments } = await this.octokit.rest.issues.listComments({
-                owner,
-                repo,
-                issue_number: prNumber,
-            });
+            // Find existing comment across all pages
+            const comments = await this.octokit.paginate(this.octokit.rest.issues.listComments, { owner, repo, issue_number: prNumber, per_page: 100 });
             // Check for both new and legacy identifiers for backward compatibility
             const legacyIdentifier = ReportFormatter.getLegacyCommentIdentifier();
             const existingComment = comments.find((comment) => comment.body?.includes(identifier) ||
